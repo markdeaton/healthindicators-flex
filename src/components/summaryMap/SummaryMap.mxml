@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx" 
+			   xmlns:esri="http://www.esri.com/2008/ags"
+			   close="PopUpManager.removePopUp( this )"
+			   height="600" width="800"
+			   title="These are the US counties meeting the selection criteria on each of the maps you are comparing"
+			   backgroundColor="0x191919"
+			   xmlns:ago="com.esri.dtc.ago.*" 
+			   xmlns:helperClasses="helperClasses.*" 
+			   creationComplete="onCreationComplete(event)"
+			   >
+
+	<fx:Script>
+		<![CDATA[
+			import com.esri.dtc.ago.*;
+			
+			import mx.controls.Alert;
+			import mx.managers.PopUpManager;
+			import mx.rpc.events.FaultEvent;
+			
+			protected function onSaveMap(event:MouseEvent):void {
+				PopUpManager.addPopUp( mapSaveBox, this, true );
+				PopUpManager.centerPopUp( mapSaveBox );
+			}
+			
+			 
+			private function onLogin(e:Event):void {
+				mUser.removeEventListener(Event.COMPLETE, onLogin);
+				mUser.removeEventListener(FaultEvent.FAULT, onLoginFault);
+				
+				// Construct web map
+				var wm:WebMap = new WebMap();
+				// Basemap layer
+				wm.baseMap.title = 'Light Gray Canvas';
+				
+				wm.baseMap.baseMapLayers.push(com.esri.dtc.ago.BaseMapLayer.LIGHT_GREY);
+				
+				// Operational layer, including definition query
+				var opLayer:OperationalLayer = new OperationalLayer('Counties', 0.7, publishingFeatureServiceUrl);
+				
+				var defExpr:String = layerDefinitionCriteria.layerDefinition();
+				opLayer.layerDefinition = {
+					"definitionExpression" : defExpr,
+					"geometryType" : "",
+					"hasAttachments" : false,
+					"maxScale" : 0
+				};
+				
+				//Operational Layer Pop-up
+//				var pi:AGOpopupInfo = new AGOpopupInfo();
+//				pi.title = 'Matched State'
+//				//For each field we want in the pop-up, create a PopUpFieldInfo and get its alias from the layerDetails
+//				var fields:Array = ['NAME', 'TOTPOP_CY', 'POPDENS_CY'];
+//				var layerFields:Array = statesLayer.layerDetails.fields;
+//				for each (var field:String in fields) {
+//					var pf:PopUpFieldInfo = new PopUpFieldInfo();
+//					pf.fieldName = field;
+//					for (var i:int = 0; i < layerFields.length; i++) {
+//						if (layerFields[i].name == field) {
+//							pf.label = layerFields[i].alias;
+//							pf.visible = true;
+//						}
+//					}
+//					pi.fieldInfos.push(pf);
+//				}
+//				opLayer.popupInfo = pi;
+				
+				//Add the Operational Layer
+				wm.operationalLayers.push(opLayer);
+
+				// Description
+				var sDesc:String = 
+					"<ul>" + "<li>" +
+					layerDefinitionCriteria.layerDefnDescsXmlSafe().join( "</li><li>" )
+					+ "</li>" + "</ul>";
+				
+				// Save the map
+				mUser.addEventListener(Event.COMPLETE, onSave);
+				mUser.addEventListener(FaultEvent.FAULT, onSaveFault);
+				mUser.addMap(wm, mapTitle.text, mapDescription.text, mapTags.text, sDesc);
+				PopUpManager.removePopUp( mapSaveBox );
+			}
+			private function onLoginFault(f:FaultEvent):void {
+				mUser.removeEventListener(Event.COMPLETE, onLogin);
+				mUser.removeEventListener(FaultEvent.FAULT, onLoginFault);
+				Alert.show("Error connnecting to ArcGIS. Please check your username and password.");
+			}
+			
+
+			protected function onMapSaveBox_Save(event:MouseEvent):void {
+				// Log in
+				mUser.addEventListener(Event.COMPLETE, onLogin);
+				mUser.addEventListener(FaultEvent.FAULT, onLoginFault);
+				mUser.login();
+			}
+			
+			private function readyToSave(... inputFields):Boolean {
+				return inputFields.every( function( ti:String, i:int, a:Array ):Boolean {
+					return ti != "";
+				});
+			}
+			
+			protected function onSave(event:Event):void
+			{
+				PopUpManager.removePopUp( mapSaveBox );
+				PopUpManager.addPopUp( pnlMapSuccess, this, true );
+				PopUpManager.centerPopUp( pnlMapSuccess );
+			}
+			
+			protected function onSaveFault(event:FaultEvent):void
+			{
+				Alert.show( "Problem while saving this map:\n" + event.fault.message, "Failed" );
+			}
+			
+			protected function onCreationComplete(event:Event):void
+			{
+				if (warnAboutJoinedUserData) {
+					Alert.show("You have joined your own data to the original map. If this summary map uses any "
+						+ "uploaded attributes, it will not display properly when published to ArcGIS Online. "
+						+ "Only the map's original attributes can be used for this purpose.",
+						"Note"); 
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<fx:Declarations>
+		<ago:PortalUser id="mUser"/>
+		<fx:Boolean id="warnAboutJoinedUserData">false</fx:Boolean>
+		<fx:String id="url"/>
+		<fx:String id="publishingFeatureServiceUrl"/>
+		<helperClasses:LayerDefinitionCriteria id="layerDefinitionCriteria"/>
+		<fx:uint id="idOfOperationalLayer"/>
+		<fx:uint id="idOfBackgroundLayer"/>
+		<esri:Extent id="mapExtent"/>
+		<esri:Extent id="mapInitialExtent"/>
+		<fx:Array id="dynamicLayerInfos"/>
+		<fx:Array id="layerDrawingOptions"/>
+		<!-- Map save form -->
+		<s:BorderContainer id="mapSaveBox" borderWeight="2">			
+			<s:layout>
+				<s:VerticalLayout paddingLeft="5" paddingRight="5"/>				
+			</s:layout>
+			<s:Image width="100%" scaleMode="letterbox" source="@Embed('ArcGIS_header.png')" />
+			<s:Line width="75%">
+				<s:stroke>
+					<s:SolidColorStroke color="black"/>
+				</s:stroke>
+			</s:Line>
+			<s:Form width="100%">
+				<s:FormItem label="ArcGIS.com username">
+					<s:TextInput id='userId' text="@{mUser.username}"/>
+				</s:FormItem>
+				<s:FormItem label="Password">
+					<s:TextInput displayAsPassword="true" id='userPwd' text="@{mUser.password}"/>
+				</s:FormItem>
+				<s:FormItem label="Map Title">
+					<s:TextInput id='mapTitle' />
+				</s:FormItem>
+				<s:FormItem label="Summary">
+					<s:TextInput id='mapDescription' />
+				</s:FormItem>
+				<s:FormItem label="Tags (comma separated)">
+					<s:TextInput id='mapTags' />
+				</s:FormItem>
+				<s:HGroup horizontalAlign="right" width="100%" paddingRight="40">
+					<s:Button label="Save Map" 
+							  enabled="{readyToSave(userId.text, mapTitle.text, mapDescription.text, mapTags.text)}" 
+							  click="onMapSaveBox_Save(event)"/>
+					<s:Button label="Cancel" click="{PopUpManager.removePopUp( mapSaveBox )}"/>
+				</s:HGroup>
+			</s:Form>
+		</s:BorderContainer>
+		<!-- Map success notification -->
+		<s:Panel id="pnlMapSuccess" title="Success" width="200" height="150">
+			<s:layout>
+				<s:VerticalLayout horizontalAlign="center" gap="10" paddingTop="20"/>
+			</s:layout>
+			<s:Label text="Map saved successfully"/>
+			<mx:LinkButton label="Go to ArcGIS.com" textDecoration="underline" color="blue">
+				<mx:click>
+					<![CDATA[
+					var sUrl:String = "http://www.arcgis.com/home/webmap/viewer.html?"
+						+ "webmap=" + mUser.lastItemID
+						+ "&token=" + mUser.token;
+					navigateToURL( new URLRequest(sUrl), "_blank" );
+					]]>
+				</mx:click>
+			</mx:LinkButton>
+			<s:Button label="Close" click="PopUpManager.removePopUp(pnlMapSuccess)"/>
+		</s:Panel>
+	</fx:Declarations>
+	
+	<esri:Map height="100%" width="100%" logoVisible="false" scaleBarVisible="false" 
+			  extent="{mapExtent}" initialExtent="{mapInitialExtent}"
+			  navigationClass="components.navigation.ZoomInOut">
+		<esri:ArcGISDynamicMapServiceLayer url="{this.url}">
+			<esri:load>
+				<![CDATA[
+				// Use formatting as defined by the map author, but only show the state outlines layer
+				var lyr:ArcGISDynamicMapServiceLayer = event.currentTarget as ArcGISDynamicMapServiceLayer;
+				var li:Array = lyr.createDynamicLayerInfosFromLayerInfos();
+				var iLyr:int = idOfBackgroundLayer;
+				lyr.dynamicLayerInfos = [ li[iLyr] ];
+				]]>
+			</esri:load>
+		</esri:ArcGISDynamicMapServiceLayer>
+		<esri:ArcGISDynamicMapServiceLayer id="lyrFilterSummary"
+		   url="{this.url}"
+		   layerDefinitions="{this.layerDefinitionCriteria.layerDefinition()}"
+		   dynamicLayerInfos="{this.dynamicLayerInfos}"
+		   layerDrawingOptions="{this.layerDrawingOptions}"
+		/>
+	</esri:Map>
+	
+	<!-- Auxiliary information -->
+<!--	<s:List top="2" right="2" 
+			fontSize="10"
+			borderVisible="false" color="yellow" 
+			contentBackgroundColor="0x191919" contentBackgroundAlpha="0.5"
+			enabled="false"
+			dataProvider="{new ArrayCollection(layerDefinitionCriteria.layerDefinitionDescriptions())}">
+	</s:List>-->
+
+	<s:Label bottom="2" left="2" fontSize="9" color="yellow" text="Data source: U.S. Census, 2010" visible="false" includeInLayout="false"/>
+	<s:Button top="2" right="2" label="Save to ArcGIS Online" click="onSaveMap(event)"/>
+</s:TitleWindow>

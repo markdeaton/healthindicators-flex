@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+	<initialExtent 
+		xmin="-4079943.9417727" 
+		ymin="-2669244.03949973"
+		xmax="2207781.16286709" 
+		ymax="2821445.48849558"
+	/>
+	<title>Dynamic Layers</title>
+	<!-- Max # maps (currently code supports up to 4) -->
+	<maxMaps>4</maxMaps>
+	<!-- Layout is tiled or horizontal -->
+	<mapLayout>tiled</mapLayout>
+
+	<viewSourceBtnVisible>false</viewSourceBtnVisible>
+	
+	<!-- Alias for the attribute value for the first map 
+		(will be automatically added on startup) -->
+<!--  	<initialMapDataset></initialMapDataset>-->
+  	<initialMapDataset>2010 Total Population (U.S. Census)</initialMapDataset>
+<!-- 		<initialMapDataset>Diabetes (percent), 2009</initialMapDataset> -->
+	
+	<!-- If attr values should be normalized for classification/display, enter the field (not the alias) here
+	 	 If not, leave it empty -->
+	<normalizationField></normalizationField>	
+<!--	<normalizationField>TOTPOP10</normalizationField>	-->
+	<!--  Need to know the maximum value in the field being used to normalize; this helps
+		  the client code calculate the gap between legend class breaks.
+		  Use a value of 1 here if not using a normalization field. -->
+	<normalizationFieldMaxVal>1</normalizationFieldMaxVal>
+
+	<!--  How many categories (bars in the bar chart) to use to present the data histogram -->
+	<dataDistributionBuckets>30</dataDistributionBuckets>
+	
+	<!-- Image type to be generated & returned by the server 
+		 see http://help.arcgis.com/en/arcgisserver/10.0/apis/rest/export.html 
+		 N.B.: If you see white outlines around shapes on a dark background, try these workarounds:
+		       1. Make sure your map frame background color is set to black before publishing your service; or
+		       2. Use png32 as the format here -->
+	<imageFormat>png8</imageFormat>
+
+	<hilightFadeSlowTime>1000</hilightFadeSlowTime>
+	<hilightFadeFastTime>750</hilightFadeFastTime>
+	
+	<!-- The map service behind this app should have two layers:
+	     1. (Topmost):    The features of interest with the attributes you want to render dynamically;
+	     2. (Underneath): More generalized geographies to give the user a reference when topmost features
+	                      are hidden or filtered out
+	     For example, U.S. counties may be the features of interest, and the background layers would be
+	     U.S. state outlines in muted colors, just to provide reference and context. -->
+	<!-- URL for the map service to display. idOfLayerWithAttrs = index of layer to display. -->
+	<mapService idOfLayerWithAttrs="0" idOfBackgroundLayer="1">
+		http://maps.esri.com/apl12/rest/services/DynamicLayers/HealthIndicators/MapServer
+	</mapService>
+
+	<!-- This app can publish results to ArcGIS Online. Here's where you can specify a layer that's symbolized
+	     in a way appropriate for display in ArcGIS Online. -->
+	<publishingFeatureService>
+		http://maps.esri.com/apl12/rest/services/DynamicLayers/HealthIndicators/MapServer/2
+	</publishingFeatureService>
+	
+	<userDataImport>
+		<mapSvcJoinKeyFieldname>ID</mapSvcJoinKeyFieldname>
+		<!-- When preparing a 10.1 map service with dynamic layers capability, 
+			 you must specify a workspace ID for your database.
+			 Specify here the name of the workspace you set up prior to publishing your service. -->
+		<dynamicWorkspaceId>DynamicLayersDemoWorkspace</dynamicWorkspaceId>
+		<fileUploadUrl>
+		http://fjord:6080/arcgis/rest/services/DynamicLayers/Datafile2Table/GPServer/uploads/upload
+		</fileUploadUrl>
+		<importServiceUrl>
+		http://fjord:6080/arcgis/rest/services/DynamicLayers/Datafile2Table/GPServer/Datafile2Table
+		</importServiceUrl>
+		<!-- Would be nice to have a dropdown list of join-field candidates, rather than typing it in. Not there yet. -->
+<!-- 		<listFieldsServiceUrl>http://<server>:6080/arcgis/rest/services/DynamicLayers/ListCSVFields/GPServer/ListCSVFields</listFieldsServiceUrl> -->
+<!-- 		<listFieldsUploadUrl>http://<server>:6080/arcgis/rest/services/DynamicLayers/ListCSVFields/GPServer/uploads/upload</listFieldsUploadUrl> -->
+		<params>
+			<inputFilename>Input_Datafile</inputFilename>
+			<inputFieldToIndex>Index_Fieldname</inputFieldToIndex>
+			<outputTablename>Imported_Tablename</outputTablename>
+<!-- 			<listFieldsInputFilename>inCSVFile</listFieldsInputFilename> -->
+<!-- 			<listFieldsOutputFieldnames>outFieldList</listFieldsOutputFieldnames> -->
+		</params>
+	</userDataImport>
+
+	<!-- How to symbolize features with no associated data (for the attribute of interest).
+	     Valid fill styles: solid, null, horizontal, vertical, cross, 
+	                        forwarddiagonal, backwarddiagonal, diagonalcross
+	     Valid outline styles: solid, null, dot, dashdotdot,
+	                           dashdot, dash
+	  -->
+	<noDataSymbol
+		color="0x777777" alpha="1.0" style="forwarddiagonal"
+		outlineColor="0x000000" outlineAlpha="0.25" outlineWidth="0" outlineStyle="solid"
+	/>
+	
+	<attrBreaks>
+		<colorRamps>
+			<colorRamp outlineColor="0x000000" outlineAlpha="0.25">
+				<color hex='0xEEE3C2'/>
+				<color hex='0xF1C67B'/>
+				<color hex='0xB0A8A0'/>
+				<color hex='0x5687B4'/>
+				<color hex='0x125194'/>
+			</colorRamp>
+			<colorRamp outlineColor="0x000000" outlineAlpha="0.25">
+				<color hex='0xD7191C'/>
+				<color hex='0xFDAE61'/>
+				<color hex='0xFFFFBF'/>
+				<color hex='0xA6D96A'/>
+				<color hex='0x1A9641'/>
+			</colorRamp>
+			<colorRamp outlineColor="0x000000" outlineAlpha="0.25">
+				<color hex='0xA6611A'/>
+				<color hex='0xDFC27D'/>
+				<color hex='0xF5F5F5'/>
+				<color hex='0x80CDC1'/>
+				<color hex='0x018571'/>
+			</colorRamp>
+			<colorRamp outlineColor="0x000000" outlineAlpha="0.25">
+				<color hex='0xEFF3FF'/>
+				<color hex='0xBDD7E7'/>
+				<color hex='0x6BAED6'/>
+				<color hex='0x3182BD'/>
+				<color hex='0x08519C'/>
+			</colorRamp>
+
+			<colorRamp outlineColor="0x000000" outlineAlpha="0.25">
+				<color hex='0xD73027'/>
+				<color hex='0xFC8D59'/>
+				<color hex='0xFEE08B'/>
+				<color hex='0xFFFFBF'/>
+				<color hex='0xD9EF8B'/>
+				<color hex='0x91CF60'/>
+				<color hex='0x1A9850'/>
+			</colorRamp>
+			<colorRamp outlineColor="0x000000" outlineAlpha="0.25">
+				<color hex='0x8C510A'/>
+				<color hex='0xD8B365'/>
+				<color hex='0xF6E8C3'/>
+				<color hex='0xF5F5F5'/>
+				<color hex='0xC7EAE5'/>
+				<color hex='0x5AB4AC'/>
+				<color hex='0x01665E'/>
+			</colorRamp>
+			<colorRamp outlineColor="0x000000" outlineAlpha="0.25">
+				<color hex='0xEFF3FF'/>
+				<color hex='0xC6DBEF'/>
+				<color hex='0x9ECAE1'/>
+				<color hex='0x6BAED6'/>
+				<color hex='0x4292C6'/>
+				<color hex='0x2171B5'/>
+				<color hex='0x084594'/>
+			</colorRamp>
+
+			<colorRamp outlineColor="0x000000" outlineAlpha="0.25">
+				<color hex='0xD73027'/>
+				<color hex='0xF46D43'/>
+				<color hex='0xFDAE61'/>
+				<color hex='0xFEE08B'/>
+				<color hex='0xFFFFBF'/>
+				<color hex='0xD9EF8B'/>
+				<color hex='0xA6D96A'/>
+				<color hex='0x66BD63'/>
+				<color hex='0x1A9850'/>
+			</colorRamp>
+			<colorRamp outlineColor="0x000000" outlineAlpha="0.25">
+				<color hex='0x8C510A'/>
+				<color hex='0xBF812D'/>
+				<color hex='0xDFC27D'/>
+				<color hex='0xF6E8C3'/>
+				<color hex='0xF5F5F5'/>
+				<color hex='0xC7EAE5'/>
+				<color hex='0x80CDC1'/>
+				<color hex='0x35978F'/>
+				<color hex='0x01665E'/>
+			</colorRamp>			
+			<colorRamp outlineColor="0x000000" outlineAlpha="0.25">
+				<color hex='0xF7FBFF'/>
+				<color hex='0xDEEBF7'/>
+				<color hex='0xC6DBEF'/>
+				<color hex='0x9ECAE1'/>
+				<color hex='0x6BAED6'/>
+				<color hex='0x4292C6'/>
+				<color hex='0x2171B5'/>
+				<color hex='0x08519C'/>
+				<color hex='0x08306B'/>
+			</colorRamp>
+		</colorRamps>
+	</attrBreaks>
+	
+	<invalidCriteriaMessage>
+In each of the maps you are comparing, first select the set of US counties that interests you, and then press the Summary Map button.
+
+The Summary Map shows you a map of the US counties that fall into your selection criteria on each of the maps you are comparing. For example, if you open the 2009 Smoking map and select the 10% of counties with the highest smoking rate, and you then open the 2009 Diabetes map and select the 10% of counties with the highest diabetes rate, the Summary Map will show you the US Counties that fall into both categories.
+	</invalidCriteriaMessage>
+	
+	<classificationMethodsDocUrl>
+		http://help.arcgis.com/en/arcgisdesktop/10.0/help/00s5/00s50000001r000000.htm
+	</classificationMethodsDocUrl>
+	
+	<aboutDataStructure>
+		<messageText>
+Any imported file should be in comma-separated value (CSV) format. It should have an ID field suitable for joining to the data already present in the map. County data, for example, is usually identified by a FIPS code; an imported file must also have a FIPS code field in order to be joined to a county dataset.
+Here are two example files that can be joined to county data by their FIPS fields. First download one; then use the Browse button to browse for it.
+		</messageText>
+		<exampleFile1RelativePath>Avg_HHSz_Med_Age.csv</exampleFile1RelativePath>
+		<exampleFile2RelativePath>USPopChange2010_2000.csv</exampleFile2RelativePath>
+	</aboutDataStructure>
+</root>

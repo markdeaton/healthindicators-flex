@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:HGroup xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx"
+		 gap="5"
+		 verticalAlign="middle" xmlns:sliderPercentSpinner="components.sliderPercentSpinner.*">
+	<fx:Metadata>
+		[Event(name="change", type="flash.events.Event")]
+	</fx:Metadata>
+	<fx:Script>
+		<![CDATA[
+			import mx.events.FlexEvent;
+			
+			import spark.components.NumericStepper;
+			
+			private var _percent:Number;
+			
+			[Bindable]
+			public function get percent():Number {
+				return _percent;
+			}
+			public function set percent(value:Number):void {
+				_percent = value;
+			}
+		]]>
+	</fx:Script>
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+<!--	<s:showEffect>
+		<s:Fade duration="750" alphaFrom="0" alphaTo="1"/>
+	</s:showEffect>
+	<s:hideEffect>
+		<s:Fade duration="250" alphaFrom="1" alphaTo="0"/>
+	</s:hideEffect>-->
+	<sliderPercentSpinner:NumericStepper_ignoreMouseWheel id="nsHistoPct" value="@{percent}"
+					  minimum="0" maximum="100" 
+					  stepSize="10" snapInterval="1" 
+					  width="50">
+		<sliderPercentSpinner:change>
+			<![CDATA[
+			this.percent = (event.currentTarget as NumericStepper).value;
+			dispatchEvent( new Event( Event.CHANGE ) );
+			]]>
+		</sliderPercentSpinner:change>									
+	</sliderPercentSpinner:NumericStepper_ignoreMouseWheel>
+	<s:Label text="%"/>									
+</s:HGroup>

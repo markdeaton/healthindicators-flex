@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:List xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		xmlns:s="library://ns.adobe.com/flex/spark" 
+		xmlns:mx="library://ns.adobe.com/flex/mx"
+		rollOverColor="blue"
+		contentBackgroundAlpha="0.75"
+>
+	<s:states>
+		<s:State name="normal"/>
+		<s:State name="hovered"/>
+	</s:states>
+	<s:layout>
+		<s:VerticalLayout/>
+	</s:layout>
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<s:dataProvider>
+		<s:ArrayCollection>
+			<fx:Object label="20%" value="20"/>
+			<fx:Object label="40%" value="40"/>
+			<fx:Object label="50%" value="50"/>
+			<fx:Object label="60%" value="60"/>
+			<fx:Object label="80%" value="80"/>
+		</s:ArrayCollection>
+	</s:dataProvider>
+	<s:rollOut>
+		<![CDATA[
+			this.visible = false;
+			this.includeInLayout = false;
+		]]>
+	</s:rollOut>
+	<s:change>
+		<![CDATA[
+			this.visible = this.includeInLayout = false;
+		]]>
+	</s:change>
+	<s:show>
+		<![CDATA[
+			selectedIndex = -1;
+		]]>
+	</s:show>
+	<s:showEffect>
+		<s:Fade alphaFrom="0" alphaTo="1" duration="750"/>
+	</s:showEffect>
+	<s:hideEffect>
+		<s:Fade alphaFrom="1" alphaTo="0" duration="250"/>
+	</s:hideEffect>
+<!--	<s:itemRenderer>
+		<fx:Component>
+			<s:ItemRenderer autoDrawBackground="false">
+				<s:states>
+					<s:State name="normal"/>
+					<s:State name="hovered"/>
+				</s:states>
+				<s:Label text="{data.label}" textDecoration.hovered="underline"/>
+			</s:ItemRenderer>
+		</fx:Component>
+	</s:itemRenderer>-->
+</s:List>

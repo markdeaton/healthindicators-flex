@@ -1,0 +1,1408 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--=============================================================================
+* 
+* Copyright © 2011 ESRI. All rights reserved. 
+* 
+* Use subject to ESRI license agreement.
+* 
+* Unpublished—all rights reserved.
+* Use of this ESRI commercial Software, Data, and Documentation is limited to
+* the ESRI License Agreement. In no event shall the Government acquire greater
+* than Restricted/Limited Rights. At a minimum Government rights to use,
+* duplicate, or disclose is subject to restrictions as set for in FAR 12.211,
+* FAR 12.212, and FAR 52.227-19 (June 1987), FAR 52.227-14 (ALT I, II, and III)
+* (June 1987), DFARS 227.7202, DFARS 252.227-7015 (NOV 1995).
+* Contractor/Manufacturer is ESRI, 380 New York Street, Redlands,
+* CA 92373-8100, USA.
+* 
+* SAMPLE CODE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+* INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+* PARTICULAR PURPOSE, ARE DISCLAIMED.  IN NO EVENT SHALL ESRI OR CONTRIBUTORS
+* BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+* CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+* SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+* INTERRUPTION) SUSTAINED BY YOU OR A THIRD PARTY, HOWEVER CAUSED AND ON ANY
+* THEORY OF LIABILITY, WHETHER IN CONTRACT; STRICT LIABILITY; OR TORT ARISING
+* IN ANY WAY OUT OF THE USE OF THIS SAMPLE CODE, EVEN IF ADVISED OF THE
+* POSSIBILITY OF SUCH DAMAGE TO THE FULL EXTENT ALLOWED BY APPLICABLE LAW.
+* 
+* =============================================================================-->
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx" 
+			   pageTitle="Dynamic Mapping in ArcGIS Server 10.1" 
+			   xmlns:esri="http://www.esri.com/2008/ags"
+			   creationComplete="app_creationCompleteHandler(event)" 
+			   xmlns:local="*" 
+			   skinClass="skins.AppSkin" 
+			   xmlns:components="components.*" 
+			   xmlns:histoSlider="components.histoSlider.*" 
+			   xmlns:histogram="components.histogram.*" 
+			   xmlns:ns="library://ns.patrickmowrer.com" 
+			   xmlns:listSliderPercent="components.listSliderPercent.*" 
+			   xmlns:sliderPercentSpinner="components.sliderPercentSpinner.*"
+			   viewSourceURL="srcview/index.html" xmlns:ui="ui.*" xmlns:importDataset="components.importDataset.*" xmlns:identifyRenderer="components.identifyRenderer.*">
+<!--	<s:layout>
+		<s:VerticalLayout paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5"/>
+	</s:layout>-->
+
+	<fx:Style>
+		@namespace s "library://ns.adobe.com/flex/spark";
+		@namespace mx "library://ns.adobe.com/flex/mx";
+		@namespace esri "http://www.esri.com/2008/ags";
+		@namespace local "*";
+		@namespace components "components.*";
+		mx|ToolTip {
+			backgroundColor: "0x464646";
+			backgroundAlpha: 0.75;
+			cornerRadius: 5;
+			color: yellow;
+			fontSize: 12;
+		}
+		esri|Navigation {
+			left		: 4;
+			top			: 75;
+			right		: NaN;
+			bottom		: NaN;
+			skinClass	: ClassReference("skins.HealthIndicatorNavigationSkin");
+		}
+		esri|InfoWindow {
+			borderColor		: white;
+			borderAlpha		: 1;
+			borderThickness	: 1;
+			backgroundColor	: black;
+			backgroundAlpha	: 0.75;
+			chromeColor		: white;			
+		}
+		esri|InfoWindowLabel {
+			color			: white;
+		}
+	</fx:Style>
+
+	
+	<!-- CODE -->
+	
+	<fx:Script>
+	<![CDATA[
+		import com.esri.ags.layers.supportClasses.Field;
+		import com.esri.ags.layers.supportClasses.ILayerSource;
+		import com.esri.ags.layers.supportClasses.JoinDataSource;
+		import com.esri.ags.layers.supportClasses.LayerDataSource;
+		import com.esri.ags.layers.supportClasses.TableDataSource;
+		import com.esri.ags.symbols.SimpleFillSymbol;
+		import com.esri.ags.symbols.SimpleLineSymbol;
+		import com.esri.ags.tasks.supportClasses.ClassBreaksDefinition;
+		import com.esri.ags.utils.JSONUtil;
+		import com.esri.dtc.ago.PortalUser;
+		
+		import components.histoSlider.*;
+		import components.identifyRenderer.IdRenderer;
+		import components.importDataset.FileImport;
+		import components.importDataset.FileImportEvent;
+		
+		import helperClasses.AttributeInfo;
+		import helperClasses.LayerDefinitionCriteria;
+		import helperClasses.SelectedColorInfo;
+		
+		import mx.collections.IViewCursor;
+		import mx.collections.Sort;
+		import mx.collections.SortField;
+		import mx.collections.XMLListCollection;
+		import mx.controls.Alert;
+		import mx.events.FlexEvent;
+		import mx.managers.PopUpManager;
+		import mx.managers.ToolTipManager;
+		import mx.rpc.events.FaultEvent;
+		import mx.rpc.events.ResultEvent;
+		import mx.rpc.http.HTTPService;
+		
+		import spark.events.TextOperationEvent;
+		import spark.layouts.TileLayout;
+		import spark.layouts.TileOrientation;
+		
+		/*<!-- VARS -->*/
+		[Bindable]
+		/** 
+		 * Contains list of esri field objects for the layer or dynamic dataset.
+		 * These are then filtered for display into an array of AttributeInfo objects.
+		 **/
+		public var aryFields:ArrayCollection;
+		[Bindable]
+		/**
+		 * Contains the list of AttributeInfo objects that drives the main attribute list control.
+		 **/
+		private var aryAttrDisplayList:ArrayCollection;
+		[Bindable]
+		public var atrNormalizationField:AttributeInfo = null;
+		[Bindable]
+		private var portalUser:PortalUser = new PortalUser();
+
+		private var mapHasJoinedUserData:Boolean = false, userWasWarnedAboutJoinedData:Boolean = false;
+		
+		public var _dynLayerMasterTableName:String = null;
+		
+		// Should be a uint, but we may need to pass NaN to indicate no color selected
+		[Bindable]
+		public var chosenHilightColor:Number;
+		
+		[Bindable]
+		public var _chosenColors:SelectedColorInfo;
+		[Bindable]
+		public var _noDataSymbol:SimpleFillSymbol;
+		
+		/*<!-- FUNCTIONS -->*/
+		protected function app_creationCompleteHandler(event:FlexEvent):void {
+			htsConfig.send(); // Get the config file
+			// Look for follow-up init processing in htsConfig_resultHandler().
+		}
+		
+		private function getAttributeInfo():void {
+//			aryList.removeAll();
+			// Get attribute info from layer-of-interest
+			var sUrlMapSvc:String = m_xmlConfig.mapService.valueOf();
+			var iIdOfLayerWithAttrs:int = int(m_xmlConfig.mapService.@idOfLayerWithAttrs);
+			
+			var htsClassAttrs:mx.rpc.http.HTTPService = new mx.rpc.http.HTTPService();
+			htsClassAttrs.url = sUrlMapSvc
+								+ "/dynamicLayer";
+			
+			// Listeners for getting attributes, for handling results, and for handling errors
+			
+			htsClassAttrs.addEventListener( ResultEvent.RESULT, function( event:ResultEvent ):void {
+				var oResults:Object = JSONUtil.decode( event.result.toString() );
+				aryFields = new ArrayCollection( oResults.fields );
+				
+				// Convert to attributeInfo array for display
+				// Filter out generally undesirable attributes (non-numeric types et al)
+				aryAttrDisplayList = new ArrayCollection();
+				_dynLayerMasterTableName = null;
+				for each ( var oResult:Object in aryFields ) {
+					// If this is a joined dynamic layer, make a note the table that contains the geometry
+					if ( oResult.type == Field.TYPE_GEOMETRY )
+						_dynLayerMasterTableName = AttributeInfo.tableNameFromAttrName( oResult.name );
+					
+					if ( (	oResult.type == Field.TYPE_DOUBLE || oResult.type == Field.TYPE_INTEGER || 
+							oResult.type == Field.TYPE_SINGLE || oResult.type == Field.TYPE_SMALL_INTEGER)
+							&& (oResult.alias != "Shape_Area" && oResult.alias != "Shape_Length") 
+							&& (String(oResult.alias).substr(0, "OBJECTID".length) != "OBJECTID") 
+							&& (oResult.name != m_xmlConfig.userDataImport.mapSvcJoinKeyFieldname.toString()) ) {
+						var attr:AttributeInfo = new AttributeInfo( oResult.name, oResult.alias, oResult.type );
+						// Is it the normalization field? Then don't add it to the list, but make a note of it
+						if ( oResult.name == m_xmlConfig.normalizationField.valueOf() )
+							atrNormalizationField = attr;
+						else
+							aryAttrDisplayList.addItem( attr );
+					}
+				}
+				updateSelectedMapsList();
+				// Now sort by field and attribute, so imported tables are grouped together
+				var sort:Sort = new Sort();
+				sort.fields = [ new SortField( "tableName" ), new SortField( "attrAlias" ) ];
+				aryAttrDisplayList.sort = sort;
+				aryAttrDisplayList.refresh();
+			});
+			
+			htsClassAttrs.addEventListener( FaultEvent.FAULT, function( event:FaultEvent ):void {
+				Alert.show( "Error requesting attribute info: " + event.fault.message );
+			});
+			
+			var sLayers:String = JSONUtil.encode( dynLyrInfos[ 0 ] );
+			// Now that it's all set up, go fetch the attributes
+			try {
+				htsClassAttrs.send( { "f" : "json", "layer" : sLayers } );
+			}
+			catch ( err:Error ) {
+				Alert.show( "Error requesting attribute info: " + err.message );
+			}
+		}
+
+		/** After attribute data added, updates the old selected maps list with equivalents from the new maps list.
+		 *  If no maps selected, chooses the default specified in the config file. **/
+		private function updateSelectedMapsList():void {
+			
+			// Sort the attributes by their alias text
+			var sort:Sort = new Sort();
+			sort.fields = [ new SortField( "attrAlias" ) ];
+			aryAttrDisplayList.sort = sort;
+			aryAttrDisplayList.refresh();
+			
+			var vc:IViewCursor = aryAttrDisplayList.createCursor();
+			
+			if ( aryActiveDatasets.length >= 1 ) { // Map(s) previously selected; reselect from the new list
+				var aryPrevActiveDatasets:ArrayCollection = new ArrayCollection( aryActiveDatasets.toArray() );
+				aryActiveDatasets.removeAll();
+				for each ( var prevActiveMap:AttributeInfo in aryPrevActiveDatasets ) {
+					if ( vc.findAny( { "attrAlias" : prevActiveMap.attrAlias } ) )
+						addMap( AttributeInfo( vc.current ) );
+				}
+			}
+			else {// No map previously selected; show the default
+				if ( vc.findAny( { "attrAlias":m_xmlConfig.initialMapDataset.valueOf().toString() } ) )
+					addMap( AttributeInfo( vc.current ) );
+			}
+		}
+
+		/**
+		 * Searches for case-insensitive matching attribute aliases.
+		 * Space acts as a delimiter; a matching alias will have all space-delimited word fragments.
+		 **/
+		protected function txtSearch_changeHandler(event:TextOperationEvent):void {
+			var aFilter:Array = TextInput(event.currentTarget).text.toLocaleLowerCase().split( " " );
+			
+			aryAttrDisplayList.filterFunction = function( o:Object ):Boolean {
+				return aFilter.every( function( s:String, i:int, a:Array ):Boolean {
+					return (this[ lstAttrs.labelField ] as String).toLocaleLowerCase().indexOf( s ) > -1;
+				}, o);
+			}
+			aryAttrDisplayList.refresh();
+		}
+
+		public function addMap( ai:AttributeInfo ):void {
+			aryActiveDatasets.addItem( ai );
+		}
+		public function removeMap( ai:AttributeInfo ):void {
+			// Remove just this map from the list
+			aryActiveDatasets.removeItemAt( 
+				aryActiveDatasets.getItemIndex( ai )
+			);
+			aryActiveDatasets.refresh();
+		}
+
+		/**
+		 * What to do after getting the configuration file XML
+		 **/
+		protected function htsConfig_resultHandler(event:ResultEvent):void {
+			m_xmlConfig = XML(event.result);
+			getAttributeInfo();
+			cboColors.selectedIndex = 0;
+			
+			// Create noData fill symbol from config params
+			var symOutline:SimpleLineSymbol = new SimpleLineSymbol(
+				m_xmlConfig.noDataSymbol.@outlineStyle.toString(),
+				m_xmlConfig.noDataSymbol.@outlineColor,
+				 m_xmlConfig.noDataSymbol.@outlineAlpha,
+				 m_xmlConfig.noDataSymbol.@outlineWidth.toString()
+			);
+			_noDataSymbol = new SimpleFillSymbol(
+				m_xmlConfig.noDataSymbol.@style.toString(),
+				m_xmlConfig.noDataSymbol.@color,
+				m_xmlConfig.noDataSymbol.@alpha,
+				symOutline
+			);
+		}
+		
+		protected function colorRampDataProvider( ramps:XMLList, nBreaks:Number ):XMLListCollection {
+			var xmllist:XMLListCollection = new XMLListCollection( ramps );
+			xmllist.filterFunction = function( o:XML ):Boolean {
+				return (o.color.length() == nBreaks);
+			};
+			xmllist.refresh();
+			return xmllist;
+		}
+		
+		
+		private function toggleRenderOptions():void {
+			grpRendererOptions.visible = !grpRendererOptions.visible;
+		}
+		
+		protected function fileImportedHandler(event:FileImportEvent):void {
+			// A user's data file has been imported; update the shared dynamicLayerInfos array
+			// to join the new data to the old, and update the list of available attributes 
+			var sTablename:String = event.importedTableName;
+			var sJoinFieldname:String = event.importedTableJoinFieldname;
+			// Modify the one of interest and add it to our dynamic layer
+			var dli:DynamicLayerInfo = dynLyrInfos[ 0 ];
+			var preexistingLyrSrc:ILayerSource = dli.source;
+			
+			var joinSrc:JoinDataSource = new JoinDataSource();
+			joinSrc.joinType = JoinDataSource.LEFT_OUTER_JOIN;
+			joinSrc.leftTableSource = preexistingLyrSrc;
+			joinSrc.leftTableKey = m_xmlConfig.userDataImport.mapSvcJoinKeyFieldname.toString();
+			
+			var newTblSrc:TableDataSource = new TableDataSource();
+			newTblSrc.workspaceId = m_xmlConfig.userDataImport.dynamicWorkspaceId.toString();
+			newTblSrc.dataSourceName = sTablename;
+			var newTblLyrSrc:LayerDataSource = new LayerDataSource();
+			newTblLyrSrc.dataSource = newTblSrc;
+			
+			joinSrc.rightTableSource = newTblLyrSrc;
+			joinSrc.rightTableKey = sJoinFieldname;
+			
+			var newDynLyrSrc:LayerDataSource = new LayerDataSource();
+			newDynLyrSrc.dataSource = joinSrc;
+			dli.source = newDynLyrSrc;
+			dynLyrInfos = [ dli ];
+			
+			// Make a note that there's now user data in the attribute set
+			mapHasJoinedUserData = true;
+			
+			// And then update the attributes list
+//			aryActiveDatasets.removeAll();
+			getAttributeInfo();
+		}
+		
+	]]>
+	</fx:Script>
+	
+	
+	
+	<fx:Declarations>
+		<fx:Array id="dynLyrInfos">
+			<esri:DynamicLayerInfo defaultVisibility="true" layerId="0">
+				<esri:LayerMapSource mapLayerId="0"/>
+
+			</esri:DynamicLayerInfo>
+		</fx:Array>
+
+		<!-- Color of the x-ray or hilight layer -->
+		<fx:Array id="hiliteLyrDrawingOptions">
+			<esri:LayerDrawingOptions layerId="0">
+				<esri:renderer>
+					<esri:SimpleRenderer>
+						<esri:SimpleFillSymbol color="0xFFFF73" style="solid"/>
+					</esri:SimpleRenderer>
+				</esri:renderer>
+			</esri:LayerDrawingOptions>
+		</fx:Array>
+		
+		<!-- List of maps to display -->
+		<s:ArrayCollection id="aryActiveDatasets">
+			<s:collectionChange>
+			<![CDATA[
+				if ( dgMaps ) {
+					var lyt:TileLayout = TileLayout(dgMaps.layout);
+					if ( m_xmlConfig.mapLayout == "horizontal" ) {
+						lyt.orientation = TileOrientation.COLUMNS;
+						lyt.requestedRowCount = 1;
+						lyt.requestedColumnCount = aryActiveDatasets.length;
+					}
+					else { // mapLayout == "tiled"
+						switch ( aryActiveDatasets.length ) {
+							case 0:
+								// Expected if list is changed, generally due to user adding a data set
+								break;
+							case 1:
+								lyt.orientation = TileOrientation.COLUMNS;
+								lyt.requestedColumnCount = 1; lyt.requestedRowCount = 1;
+								break;
+							case 2:
+								lyt.orientation = TileOrientation.COLUMNS;
+								lyt.requestedColumnCount = 1; lyt.requestedRowCount = 2;
+								break;
+							case 3:
+							case 4:
+								lyt.orientation = TileOrientation.ROWS;
+								lyt.requestedColumnCount = 2; lyt.requestedRowCount = 2;
+								break;
+							// If more maps are desired, here's where to put the extra cases for layout logic
+							default:
+								// This shouldn't be reached
+								Alert.show("The configuration file allows more maps than can be handled by the layout logic. Please check your configuration file.");
+						}
+					}
+					lyt.columnWidth = dgMaps.width / lyt.columnCount;
+					lyt.rowHeight = dgMaps.height / lyt.rowCount;
+				
+					// Refresh attribute list selection indicators
+					ArrayCollection(lstAttrs.dataProvider).refresh();
+				}
+			]]>
+			</s:collectionChange>
+		</s:ArrayCollection>
+		
+<!--
+			listFieldsDataFilenameParam="{m_xmlConfig.userDataImport.params.listFieldsInputFilename}"
+			listFieldsFieldNamesParam="{m_xmlConfig.userDataImport.params.listFieldsOutputFieldnames}"
+			gpListFieldsUploadUrl="{m_xmlConfig.userDataImport.listFieldsUploadUrl}"
+			gpListFieldsUrl="{m_xmlConfig.userDataImport.listFieldsServiceUrl}"-->
+		<importDataset:FileImport id="twFileUpload" fileImported="fileImportedHandler(event)"
+			gpImportUploadUrl="{m_xmlConfig.userDataImport.fileUploadUrl}"
+			gpImportUrl="{m_xmlConfig.userDataImport.importServiceUrl}"
+			importCreatedTablenameParam="{m_xmlConfig.userDataImport.params.outputTablename}"
+			importDataFilenameParam="{m_xmlConfig.userDataImport.params.inputFilename}"
+			importJoinFieldnameParam="{m_xmlConfig.userDataImport.params.inputFieldToIndex}"
+			sAboutDataStructure="{m_xmlConfig.aboutDataStructure.messageText}"
+			exampleFile1="{m_xmlConfig.aboutDataStructure.exampleFile1RelativePath}"
+			exampleFile2="{m_xmlConfig.aboutDataStructure.exampleFile2RelativePath}"/>		
+
+		<!-- Used to synchronize extents of all comparison maps -->
+		<esri:Extent id="extMap"
+					 xmin="{m_xmlConfig.initialExtent.@xmin}"
+					 ymin="{m_xmlConfig.initialExtent.@ymin}"
+					 xmax="{m_xmlConfig.initialExtent.@xmax}" 
+					 ymax="{m_xmlConfig.initialExtent.@ymax}"/>
+		<!-- Set from config, then not changed; used to zoom back to initial extent -->
+		<esri:Extent id="extInitial"
+					 xmin="{m_xmlConfig.initialExtent.@xmin}"
+					 ymin="{m_xmlConfig.initialExtent.@ymin}"
+					 xmax="{m_xmlConfig.initialExtent.@xmax}" 
+					 ymax="{m_xmlConfig.initialExtent.@ymax}"/>
+		
+		<s:HTTPService id="htsConfig" url="assets/cfg/config.xml" result="htsConfig_resultHandler(event)" resultFormat="e4x"/>
+		
+		<fx:XML id="m_xmlConfig" format="e4x"/>
+
+		<s:TitleWindow id="twInvalidCriteria" close="PopUpManager.removePopUp( TitleWindow(event.currentTarget) )"
+					   backgroundColor="black" color="black"
+					   title="How Map Comparison Works"
+					   width="400">
+			<s:layout><s:VerticalLayout horizontalAlign="right"/></s:layout>
+			<s:Label text="{m_xmlConfig.invalidCriteriaMessage.valueOf().toString()}"
+					 top="0" bottom="0" left="0" right="0"
+					 paddingBottom="5" paddingLeft="5" paddingRight="5" paddingTop="10"
+					 color="white" lineBreak="toFit"
+					 width="100%"/>
+			<s:Button label="Close" click="PopUpManager.removePopUp( twInvalidCriteria )" color="black" visible="false" includeInLayout="false"/>
+		</s:TitleWindow>
+
+		<s:Animate id="fxAnimateClassBreaksText" duration="750">
+			<s:SimpleMotionPath property="alpha" valueFrom="1" valueTo="0.25"/>
+			<s:SimpleMotionPath property="fontSize" valueFrom="12" valueTo="100"/>
+			<s:effectStart>
+				<![CDATA[
+					lblNumberClassBreaks.visible = true;
+				]]>
+			</s:effectStart>
+			<s:effectEnd>
+				<![CDATA[
+					lblNumberClassBreaks.visible = false;
+				]]>
+			</s:effectEnd>
+		</s:Animate>
+		<s:Fade id="fxFadeInChosenColorsTooltip" alphaFrom="0" alphaTo="1" duration="750"/>
+		<s:Fade id="fxFadeOutChosenColorsTooltip" alphaFrom="1" alphaTo="0" duration="750"/>
+		<s:GlowFilter id="titleItemsShadow" color="0x333333" strength="6" blurX="8" blurY="8" alpha="0.75"/>
+	</fx:Declarations>
+	
+	
+	<!-- UI -->
+	
+	<s:VGroup width="100%" height="100%" gap="0">
+		
+	<!-- Title/Banner -->
+	<s:BorderContainer width="100%" minHeight="0">
+		<s:backgroundFill>
+			<s:LinearGradient rotation="90">
+				<s:entries>
+					<s:GradientEntry color="0x686866"/>
+					<s:GradientEntry color="0x393939"/>
+				</s:entries>
+			</s:LinearGradient>
+		</s:backgroundFill>
+		<s:layout>
+			<s:HorizontalLayout gap="10" verticalAlign="middle"
+								paddingBottom="5" paddingLeft="10" paddingRight="10" paddingTop="5"/>
+		</s:layout>
+		<s:Image source="assets/images/title_logo.png"/>
+		<s:Label text="{m_xmlConfig.title}" fontFamily="_sans" fontSize="22" color="white" filters="{[titleItemsShadow]}"/>
+		<s:HGroup width="100%" horizontalAlign="right">
+			<!-- Normalization field -->
+			<s:Label id="lblNormalizationField"
+					 color="yellow"
+					 backgroundAlpha="0.5"
+					 backgroundColor="0x464646"
+					 fontSize="9"
+					 visible="{atrNormalizationField != null}"
+					 includeInLayout="{atrNormalizationField != null}"
+					 text="{atrNormalizationField != null ? 'Normalized by: ' + atrNormalizationField.attrAlias : ''}"/>
+			<s:Button label="Import your own dataset" visible="true" includeInLayout="true">
+				<s:click>
+					<![CDATA[
+					PopUpManager.addPopUp( twFileUpload, this, true );
+					PopUpManager.centerPopUp( twFileUpload );
+					]]>
+				</s:click>
+			</s:Button>
+		</s:HGroup>
+		<s:Button label="View Source" click="navigateToURL(new URLRequest(viewSourceURL), '_blank')"
+				  visible="{m_xmlConfig.viewSourceBtnVisible.valueOf()==true}" includeInLayout="{m_xmlConfig.viewSourceBtnVisible.valueOf()==true}"/>
+	</s:BorderContainer>
+	<!-- Content -->
+<!--		<s:HGroup width="100%" height="100%" paddingLeft="5" paddingBottom="5">-->
+	<mx:HDividedBox width="100%" height="100%" paddingLeft="5" paddingBottom="5">
+		<s:VGroup height="100%" width="25%">
+			<!-- SEARCH BOX -->
+			<s:HGroup width="100%"
+					  horizontalAlign="right" verticalAlign="middle" 
+					  paddingBottom="5" paddingLeft="5" paddingRight="5" paddingTop="5">
+				<s:TextInput id="txtSearch" prompt="Find Criteria"
+							 tabIndex="0" width="100%" 
+							 change="txtSearch_changeHandler(event)" 
+							 focusIn="txtSearch.text='';txtSearch.dispatchEvent(new TextOperationEvent(TextOperationEvent.CHANGE))"/>
+			</s:HGroup>			
+			<!-- ATTRIBUTES LIST -->
+			<s:List id="lstAttrs" height="100%" width="100%"
+					fontFamily="_sans" fontSize="12" fontStyle="normal" fontWeight="normal" color="0xFFFFFF"					
+					contentBackgroundAlpha="0"
+					labelField="attrAlias"
+					enabled="{cboColors.selectedIndex > -1}" 					
+					change="// -- item-clicking is handled in the itemRenderer click event handler" 
+					dataProvider="{aryAttrDisplayList}">
+				<s:layout>
+					<s:VerticalLayout horizontalAlign="contentJustify" gap="1"/>
+				</s:layout>
+				<s:itemRenderer>
+					<fx:Component>
+						<s:ItemRenderer autoDrawBackground="false"
+								enabled="{AttributeInfo(data).attrName != outerDocument.m_xmlConfig.normalizationField}">
+							<fx:Script>
+								<![CDATA[
+									import helperClasses.AttributeInfo;
+									import mx.collections.ArrayCollection
+								]]>
+							</fx:Script>
+							<s:states> 
+								<s:State name="normal"/> 
+								<s:State name="hovered"/>
+							</s:states> 
+							<s:click>
+								<![CDATA[
+								var o:AttributeInfo = AttributeInfo(event.currentTarget.data);
+								if ( !o ) return;
+								
+								// A list item selected and room to add it? Then move it to the active list
+								if ( !outerDocument.aryActiveDatasets.contains( o ) &&
+									 	outerDocument.aryActiveDatasets.length < outerDocument.m_xmlConfig.maxMaps )
+									outerDocument.addMap( o );
+
+								// A list item selected that's already a map? Remove it from the active list
+								else if ( outerDocument.aryActiveDatasets.contains( o ) &&
+										  outerDocument.aryActiveDatasets.length > 1 )
+									outerDocument.removeMap( o );
+								]]>
+							</s:click>
+							<s:Group width="100%" height="100%">
+								<!-- Unselected appearance -->
+								<s:Rect width="100%" height="100%" 
+										visible="{!outerDocument.aryActiveDatasets.contains( data )}">
+									<s:fill>
+										<s:LinearGradient rotation="90">
+											<s:GradientEntry color="0x565656"/>
+											<s:GradientEntry color="0x444444"/>
+										</s:LinearGradient>
+									</s:fill>
+								</s:Rect>
+								<!-- Selected appearance -->
+								<s:Rect width="100%" height="100%" visible="{outerDocument.aryActiveDatasets.contains( data )}">
+									<s:fill>
+										<s:LinearGradient rotation="90">
+											<s:GradientEntry color="0x59A1D5"/>
+											<s:GradientEntry color="0x3C78A5"/>
+										</s:LinearGradient>
+									</s:fill>
+								</s:Rect>
+								<s:HGroup verticalAlign="middle">
+									<s:Image source="@Embed('assets/images/csv.png')"
+											 visible="{outerDocument._dynLayerMasterTableName != AttributeInfo(data).tableName}"
+											 includeInLayout="{outerDocument._dynLayerMasterTableName != AttributeInfo(data).tableName}"/>
+									<s:Label text="{data.attrAlias}"  
+											 toolTip="{data.attrAlias}"
+											 fontFamily="_sans"
+											 textDecoration.hovered="underline"
+											 backgroundAlpha="0"										 
+											 verticalCenter="0" 
+											 paddingLeft="3" paddingBottom="5" paddingTop="7"/>
+								</s:HGroup>
+							</s:Group>
+						</s:ItemRenderer>
+					</fx:Component>
+				</s:itemRenderer>
+			</s:List>
+			
+			<s:VGroup gap="5" width="100%">
+				<s:HGroup width="100%" height="100%" verticalAlign="middle" color="white">
+					<s:Label width="100%" textAlign="left" text="Choose up to {m_xmlConfig.maxMaps.valueOf()} maps"/>
+					<s:Spacer width="11"/>
+					<!-- "Summary map" button -->
+					<s:Button id="btnSummaryMap" label="Summary Map" color="white" 
+							  emphasized="true" accentColor="0x000000">
+						<s:click>
+							<![CDATA[
+							import components.summaryMap.SummaryMap;
+							import mx.managers.PopUpManager;
+							// Build consolidated WHERE clause
+							var iMaps:int = this.dgMaps.numElements;
+							// Layer definition criteria
+							var layerDefinitionCriteria:LayerDefinitionCriteria = new LayerDefinitionCriteria();
+							var buckets:uint = this.m_xmlConfig.dataDistributionBuckets.valueOf();
+							var bCriteriaAreUseful:Boolean = true;
+							// For each single attribute map, create a definition criterion object and add it to the list
+							for ( var i:int = 0; i < iMaps; i++ ) {
+								var ir:Object = this.dgMaps.getElementAt( i );
+								var dynLyr:HealthIndicatorsDynMapLyr = ir.lyrDynMap as HealthIndicatorsDynMapLyr;
+								var bUsefulMinVal:Boolean = ( !isNaN(dynLyr.layerDefinitionMinVal) && (dynLyr.layerDefinitionMinVal > dynLyr.layerMinVal) );
+								var bUsefulMaxVal:Boolean = ( !isNaN(dynLyr.layerDefinitionMaxVal) && (dynLyr.layerDefinitionMaxVal < dynLyr.layerMaxVal) );
+								var iSuggestedPrecision:uint = AttributeInfo.suggestedPrecision( dynLyr.layerMinVal, dynLyr.layerMaxVal, buckets ); 
+								if ( bUsefulMinVal )
+									layerDefinitionCriteria.addCriterion( dynLyr.attrInfo, ">=", dynLyr.layerDefinitionMinVal, iSuggestedPrecision );
+								if ( bUsefulMaxVal )
+									layerDefinitionCriteria.addCriterion( dynLyr.attrInfo, "<=", dynLyr.layerDefinitionMaxVal, iSuggestedPrecision );
+								if ( !(bUsefulMinVal ||  bUsefulMaxVal) ) {
+									bCriteriaAreUseful = false;	
+									break;
+								}
+							}
+							if ( bCriteriaAreUseful ) { // Instantiate & show popup title window
+								var twSummaryMap:SummaryMap = new SummaryMap();
+								twSummaryMap.mUser = portalUser;
+								twSummaryMap.url = this.m_xmlConfig.mapService.valueOf();
+								twSummaryMap.publishingFeatureServiceUrl = this.m_xmlConfig.publishingFeatureService.valueOf();
+								twSummaryMap.idOfOperationalLayer = this.m_xmlConfig.mapService.@idOfLayerWithAttrs;
+								twSummaryMap.idOfBackgroundLayer = this.m_xmlConfig.mapService.@idOfBackgroundLayer;
+								twSummaryMap.layerDefinitionCriteria = layerDefinitionCriteria;
+								twSummaryMap.dynamicLayerInfos = dynLyrInfos;
+								twSummaryMap.layerDrawingOptions = hiliteLyrDrawingOptions;
+								twSummaryMap.mapExtent = this.extMap;
+								twSummaryMap.mapInitialExtent = this.extInitial;
+							
+								if (mapHasJoinedUserData && !userWasWarnedAboutJoinedData) { 
+									twSummaryMap.warnAboutJoinedUserData = true;
+									userWasWarnedAboutJoinedData = true;
+								}
+
+								PopUpManager.addPopUp( twSummaryMap, this, true );
+								PopUpManager.centerPopUp( twSummaryMap );
+								}
+							// If any map has no filter criteria applied by the user, explain the purpose of the
+							// summary map to the user
+							else { // Show mini-tutorial on choosing criteria
+								PopUpManager.addPopUp( twInvalidCriteria, this, true );
+								PopUpManager.centerPopUp( twInvalidCriteria );
+							}
+							]]>
+						</s:click>
+					</s:Button>
+				</s:HGroup>
+			</s:VGroup>
+		</s:VGroup>
+		
+		
+		<!-- MAPS -->
+		<s:DataGroup id="dgMaps" width="75%" height="100%" dataProvider="{aryActiveDatasets}">
+				<s:layout>				
+					<s:TileLayout id="tlMaps" orientation="columns" useVirtualLayout="false"
+								  rowAlign="justifyUsingHeight" columnAlign="justifyUsingWidth"
+								  horizontalGap="0" verticalGap="0"/>
+				</s:layout>
+				<s:itemRenderer>
+					<fx:Component>
+						<s:ItemRenderer autoDrawBackground="false" 
+										creationComplete="mapItemRenderer_creationComplete(event)"
+										removedFromStage="mapItemRenderer_remove(event)"
+										dataChange="lstSelOptions.selectedIndex=0"
+										width="100%" height="100%">
+							<fx:Declarations>
+								<!-- Identify info window renderer -->
+								<identifyRenderer:IdRenderer id="idRenderer" fieldInfos="{outerDocument.aryFields}"/>
+								
+								<!-- Fade in/out effects -->
+								<s:Fade id="fxHiliteFadeInSlow" alphaFrom="0" alphaTo="1" 
+										duration="{outerDocument.m_xmlConfig.hilightFadeSlowTime}"/>
+								<s:Fade id="fxHiliteFadeOutFast" alphaFrom="1" alphaTo="0" 
+										duration="{outerDocument.m_xmlConfig.hilightFadeFastTime}"/>
+								<s:Fade id="fxHiliteFadeInFast" alphaFrom="0" alphaTo="1" 
+										duration="{outerDocument.m_xmlConfig.hilightFadeFastTime}"/>
+								<s:Fade id="fxHiliteFadeOutSlow" alphaFrom="1" alphaTo="0" 
+										duration="{outerDocument.m_xmlConfig.hilightFadeSlowTime}"/>
+								
+								<esri:IdentifyTask id="tskId" url="{outerDocument.m_xmlConfig.mapService.valueOf()}"/>
+								<esri:IdentifyParameters id="prmId" 
+										layerIds="{[int(outerDocument.m_xmlConfig.mapService.@idOfLayerWithAttrs[0])]}"
+										dynamicLayerInfos="{outerDocument.dynLyrInfos}"
+										returnGeometry="false" layerOption="all"/>
+								<s:RadioButtonGroup id="rbgSpecifyPct" itemClick="numSpecifyPct.dispatchEvent(new Event(Event.CHANGE))"/>								
+							</fx:Declarations>
+							
+							<s:updateComplete>
+								<![CDATA[
+								trace( "ItemRenderer update complete data item " + outerDocument.aryActiveDatasets.getItemIndex( data ) );
+								]]>
+							</s:updateComplete>
+
+							<fx:Script>
+								<![CDATA[
+									import com.esri.ags.events.ExtentEvent;
+									import com.esri.ags.events.IdentifyEvent;
+									import com.esri.ags.events.MapMouseEvent;
+									import com.esri.ags.geometry.Extent;
+									import com.esri.ags.geometry.MapPoint;
+									import com.esri.ags.renderers.supportClasses.ClassBreakInfo;
+									
+									import components.identifyRenderer.IdRenderer;
+									
+									import helperClasses.AttributeInfo;
+									import helperClasses.SelectedColorInfo;
+									
+									import mx.binding.utils.BindingUtils;
+									import mx.binding.utils.ChangeWatcher;
+									import mx.collections.ArrayCollection;
+									import mx.controls.Alert;
+									import mx.effects.Parallel;
+									import mx.events.FlexEvent;
+									import mx.events.PropertyChangeEvent;
+									import mx.rpc.AsyncResponder;
+									import mx.rpc.Fault;
+									import mx.rpc.events.FaultEvent;
+									
+									import spark.events.IndexChangeEvent;
+									import spark.formatters.NumberFormatter;
+									
+									private var globalExtentChanged:Boolean = false; 
+									private var thisMapChangedTheGlobalExtent:Boolean = false;
+									[Bindable]
+									private var hiliteLyrDefns:ArrayCollection;
+									private var hiliteColorChange:ChangeWatcher;
+									private var mapExtentCW:ChangeWatcher;
+
+									private var tmrPctRangeApplyDefn:Timer = new Timer( 1000, 1 );
+									private var tmrTopBottomPctApplyDefn:Timer = new Timer( 1000, 1 );
+									
+									private function get mapIndex():int {
+										return outerDocument.aryActiveDatasets.getItemIndex( data );
+									}
+
+									protected function mapItemRenderer_creationComplete(event:FlexEvent):void
+									{
+										 hiliteColorChange = 
+											ChangeWatcher.watch( outerDocument, "chosenHilightColor", colorChanged ); 
+									}
+									
+									protected function mapItemRenderer_remove(event:Event):void
+									{
+										hiliteColorChange.unwatch();
+									}
+									
+ 									private function colorChanged ( event:PropertyChangeEvent ):void {
+										try {
+											// Get new color
+											if ( !isNaN( Number(event.newValue) ) ) {
+												var chosenColor:uint = uint(event.newValue);
+												// Get map rendering attribute field name
+												var sAttrField:String = lyrDynMap.attrInfo.attrName;
+												// Get break min/max from renderer
+												var aryClassBreaks:Array = lyrDynMap.renderer.infos as Array;
+												var classBreakForChosenColor:ClassBreakInfo = 
+													aryClassBreaks.filter(
+														function( o:Object, i:int, a:Array ):Boolean {
+															return o.symbol.color == this;
+														},
+														chosenColor
+													)[ 0 ];
+												
+												var iChosenColorIdx:int = aryClassBreaks.indexOf( classBreakForChosenColor ); 
+												var nClassMaxValue:Number = classBreakForChosenColor.maxValue;
+												var nClassMinValue:Number = classBreakForChosenColor.minValue;
+/* 												var nMaxIncrement:Number = 1 / outerDocument.m_xmlConfig.normalizationFieldMaxVal.valueOf();
+												var nClassMinValue:Number = iChosenColorIdx == 0 ?
+													0 : //dynMap.renderer.minValue :
+													aryClassBreaks[ iChosenColorIdx - 1 ].classMaxValue + 0.00000001; */ // Min value when dividing 1 by max poss value in normalization field
+												// Build, assign, run new query
+												// Account for normalization, if specified
+												var sNormField:String = outerDocument.m_xmlConfig.normalizationField.valueOf(); 
+												var sAttrName:String = ( sNormField == null || sNormField == "" )
+													? sAttrField
+													: "(" + sAttrField + "/" + sNormField + ")";
+												var sQuery:String = 
+													  sAttrName + " >= "
+													+ nClassMinValue.toString()
+													+ " AND "
+													+ sAttrName + " <= "
+													+ nClassMaxValue.toString();
+												lyrHilight.layerDefinitions = [ sQuery ];
+												
+												// Show hilite layer
+												fxHiliteFadeInSlow.play( [ lyrHilight ] );
+												fxHiliteFadeOutSlow.play( [ lyrDynMap ] );
+												
+											}
+											else {
+												fxHiliteFadeOutFast.play( [ lyrHilight ] );
+												fxHiliteFadeInFast.play( [ lyrDynMap ] );
+												lyrHilight.layerDefinitions = [ "1=0" ];
+											}
+										}
+										catch ( ex:Error ) {
+											trace( ex.getStackTrace() );
+										}
+									} 
+									
+ 									protected function mapHistoSlider_sliderChangeHandler(event:Event):void
+									{
+										var hs:HistoSlider = event.currentTarget as HistoSlider;
+
+										lyrDynMap.layerDefinitionMinVal = hs.lowThumbVal;
+										lyrDynMap.layerDefinitionMaxVal = hs.highThumbVal;
+//										lyrDynMap.refresh();	
+									} 
+									
+ 									private function histogramRangeLabel( values:Array ):String {
+										var fmt:NumberFormatter = new NumberFormatter();
+										fmt.fractionalDigits = AttributeInfo.suggestedPrecision( mapHistoSlider.minVal, mapHistoSlider.maxVal, mapHistoSlider.dataDistributionBuckets );
+										return fmt.format(values[ 0 ]) + " - " + fmt.format(values[ 1 ]);
+									}
+									
+/* 									private function setDefinitionMaxVal( value:Number, resetDefn:Boolean=false ):void {
+										if ( resetDefn ) dynMap.clearLayerDefinition();
+										dynMap.layerDefinitionMaxVal = value;
+									} */
+									
+									private function setDefinitionMaxPct( value:Number, resetDefn:Boolean=false ):void {
+										if ( resetDefn ) lyrDynMap.clearLayerDefinition();
+										lyrDynMap.layerDefinitionMaxPct = value;
+									}
+									
+/* 									private function setDefinitionMinVal( value:Number, resetDefn:Boolean=false ):void {
+										if ( resetDefn ) dynMap.clearLayerDefinition();
+										dynMap.layerDefinitionMinVal = value;
+									} */
+									
+									private function setDefinitionMinPct( value:Number, resetDefn:Boolean=false ):void {
+										if ( resetDefn ) lyrDynMap.clearLayerDefinition();
+										lyrDynMap.layerDefinitionMinPct = value;
+									}
+									
+									protected function numSpecifyPct_changeHandler(event:Event):void
+									{
+										tmrTopBottomPctApplyDefn.reset();
+										tmrTopBottomPctApplyDefn.start();
+									}
+									
+									private function onPctRangeChosen(event:TimerEvent):void {
+										var nMinPct:Number = numSpecifyPctRangeMin.value;
+										var nMaxPct:Number = numSpecifyPctRangeMax.value;
+										
+										setDefinitionMinPct( nMinPct, false );
+										setDefinitionMaxPct( nMaxPct, false );
+									}
+									
+									private function onTopBottomPctChosen(event:TimerEvent):void {
+										var nPct:Number = numSpecifyPct.value;
+										switch( rbgSpecifyPct.selection ) {
+											case optSpecifyPctTop:
+												// Top x percent = range from min (100-x) to max 100 percent
+												setDefinitionMinPct( 100-nPct, true );
+												trace("set map top " + nPct + " percent");
+												break;
+											case optSpecifyPctBottom:
+												// Bottom x percent = range from min 0 to max x percent
+												setDefinitionMaxPct( nPct, true );
+												trace("set map bottom " + String(nPct) + " percent");
+												break;
+										}
+									}
+									
+									protected function numSpecifyPctRange_changeHandler(event:Event):void
+									{
+//										var pct:NumericStepper = NumericStepper(event.currentTarget);
+//										var nPct:Number = pct.value;
+//										
+//										if ( pct === numSpecifyPctRangeMin )
+//											setDefinitionMinPct( nPct, false );
+//										else if ( pct === numSpecifyPctRangeMax )
+//											setDefinitionMaxPct( nPct, false );
+										tmrPctRangeApplyDefn.reset();
+										tmrPctRangeApplyDefn.start();
+									}
+									
+								]]>
+							</fx:Script>
+							<s:Group id="mapGroup" width="100%" height="100%">
+								<s:BorderContainer id="mapBorder"  width="100%" height="105%"
+												   borderAlpha="1" borderStyle="solid"
+												   borderColor="0xAAAAAA"
+												   minHeight="0" minWidth="0"
+												   backgroundAlpha="0">									
+									<esri:Map id="map" logoVisible="false" height="100%" width="100%"
+											  zoomSliderVisible="true" scaleBarVisible="false" 
+											  navigationClass="components.navigation.ZoomInOut"
+											  initialExtent="{outerDocument.extInitial}"
+											  infoWindowContent="{idRenderer}"
+											  openHandCursorVisible="false">
+										<esri:resize>
+											<![CDATA[
+												var map:Map = Map(event.currentTarget);
+												trace("New map #" + outerDocument.aryActiveDatasets.getItemIndex( data ) + " size: " + map.width + " x " + map.height);
+											]]>
+										</esri:resize>
+										<esri:mapClick>
+											<![CDATA[
+											var pt:MapPoint = MapMouseEvent(event).mapPoint;
+											prmId.geometry = pt;
+											prmId.mapExtent = map.extent;
+											prmId.width = map.width; prmId.height = map.height;
+											tskId.execute(prmId, new AsyncResponder(function(results:Array, token:Object):void {
+												if (results && results.length > 0) {
+													map.infoWindow.data = results[ 0 ].feature;
+													map.infoWindow.label = results[ 0 ].value; 
+													map.infoWindow.show(pt);
+												}
+											},
+											function(e:Fault, token:Object):void {
+												Alert.show("Error during identify:\n" + e.message);
+											}));
+											]]>
+										</esri:mapClick>
+										
+										<esri:creationComplete>
+											<![CDATA[
+//											trace( "Map creation complete data item " + outerDocument.aryActiveDatasets.getItemIndex( data ) );
+											tmrPctRangeApplyDefn.addEventListener(TimerEvent.TIMER_COMPLETE, onPctRangeChosen);
+											tmrTopBottomPctApplyDefn.addEventListener(TimerEvent.TIMER_COMPLETE, onTopBottomPctChosen);
+											// Watch for extent changes in order to syncrhonize multiple maps
+											mapExtentCW = ChangeWatcher.watch(
+											outerDocument, "extMap", function( e:PropertyChangeEvent ):void {
+//												trace("Extent changed");
+												globalExtentChanged = true;
+												if ( thisMapChangedTheGlobalExtent ) { // ext change already happened; do nothing
+													thisMapChangedTheGlobalExtent = false;
+												}
+												else { // another map changed it; apply the change
+													map.extent = e.newValue as Extent;
+												}
+											});
+											globalExtentChanged = true;
+											(event.currentTarget as Map).extent = outerDocument.extMap;
+											]]>
+										</esri:creationComplete>
+										<esri:remove>
+											<![CDATA[
+											mapExtentCW.unwatch();
+											]]>
+										</esri:remove>
+										
+										<!-- State outlines background reference layer -->
+										<esri:ArcGISDynamicMapServiceLayer
+											id="lyrStateOutlines"
+											url="{outerDocument.m_xmlConfig.mapService.valueOf()}"
+											visible="true">
+											<esri:load>
+												<![CDATA[
+												// Use formatting as defined by the map author, but only show the state outlines layer
+												var lyr:ArcGISDynamicMapServiceLayer = event.currentTarget as ArcGISDynamicMapServiceLayer;
+												var li:Array = lyr.createDynamicLayerInfosFromLayerInfos();
+												var iLyr:int = int(outerDocument.m_xmlConfig.mapService.@idOfBackgroundLayer[0]);
+												lyr.dynamicLayerInfos = [ li[iLyr] ];
+												]]>
+											</esri:load>
+											<esri:initialize>
+												<![CDATA[
+												trace( "Dynamic layer init complete data item " + outerDocument.aryActiveDatasets.getItemIndex( data ) );
+												]]>
+											</esri:initialize>
+										</esri:ArcGISDynamicMapServiceLayer>
+										
+										<!-- Hilight or "x-ray" layer -->	
+										<esri:ArcGISDynamicMapServiceLayer
+											id="lyrHilight"
+											url="{outerDocument.m_xmlConfig.mapService.valueOf()}"
+											visible="true" alpha="0"
+											layerDefinitions="{[ '1=0' ]}"
+											dynamicLayerInfos="{outerDocument.dynLyrInfos}"
+											layerDrawingOptions="{outerDocument.hiliteLyrDrawingOptions}">
+<!--											<esri:load>
+												<![CDATA[
+												// Use formatting as defined by the map author
+												var lyr:ArcGISDynamicMapServiceLayer = event.currentTarget as ArcGISDynamicMapServiceLayer;
+												var li:Array = lyr.createDynamicLayerInfosFromLayerInfos();
+												var iLyr:int = int(outerDocument.m_xmlConfig.mapService.@idOfLayerWithAttrs[0]);
+												lyr.dynamicLayerInfos = [ li[iLyr] ];
+												]]>
+											</esri:load>-->
+										</esri:ArcGISDynamicMapServiceLayer>
+										
+										<!-- Main attribute display layer -->
+										<local:HealthIndicatorsDynMapLyr id="lyrDynMap" 
+											attrInfo="{data}"
+											url="{outerDocument.m_xmlConfig.mapService.valueOf()}" 
+											idOfLayerWithAttrs="{outerDocument.m_xmlConfig.mapService.@idOfLayerWithAttrs}"
+											normalizationField="{outerDocument.m_xmlConfig.normalizationField.valueOf()}"
+											imageFormat="{outerDocument.m_xmlConfig.imageFormat.valueOf()}" 
+											classBreaksMethod="{outerDocument.cboClassBreaksAlgorithm.selectedItem.value}"
+											colors="{outerDocument._chosenColors}"											  
+											noDataSymbol="{outerDocument._noDataSymbol}"
+											dynamicLayerInfos="{outerDocument.dynLyrInfos}">
+										</local:HealthIndicatorsDynMapLyr>
+
+										<esri:extentChange>
+											<![CDATA[
+											if ( !globalExtentChanged ) {
+												thisMapChangedTheGlobalExtent = true;
+												outerDocument.extMap = event.extent;
+											}
+											globalExtentChanged = false;
+											]]>
+										</esri:extentChange>
+									</esri:Map>
+								</s:BorderContainer>
+								
+								<!-- LABEL -->
+								<s:BorderContainer id="mapLblContainer"
+													   top="2" left="2" right="2"
+													   minHeight="0"
+													   borderVisible="false"
+													   cornerRadius="10">
+									<s:layout>
+										<s:VerticalLayout horizontalAlign="left" gap="1"
+														  paddingLeft="5" paddingRight="5"
+														  paddingTop="5" paddingBottom="5"/>
+									</s:layout>
+									<s:backgroundFill>
+										<s:SolidColor color="0x464646" alpha="0.5"/>
+									</s:backgroundFill>
+									
+									<s:HGroup width="100%">
+										<s:Label id="lblMapAttr"
+												 width="100%"
+												 fontSize="14" fontWeight="bold" color="0xFFFFFF" 
+												 text="{data.attrAlias}">
+										</s:Label>
+										
+										<!-- CLOSE BUTTON -->
+										<s:Button id="btnCloseMap" chromeColor="0xAA6666" alpha="1" 
+												  fontWeight="bold" color="0xFFFFFF" 
+												  cornerRadius="16" 
+												  visible="{outerDocument.aryActiveDatasets.length > 1}"
+												  skinClass="components.closeButton.blk_bttn_sm">
+											<s:click>
+												<![CDATA[
+												outerDocument.removeMap( AttributeInfo(data) );
+												]]>
+											</s:click>
+										</s:Button>
+											
+									</s:HGroup>
+
+									<!-- DATA SELECTION OPTIONS -->
+									<s:HGroup verticalAlign="middle">
+<!--											<s:Label text="Select counties:" color="white"/>	-->	
+										<s:DropDownList id="lstSelOptions" minWidth="135" chromeColor="gray"
+														contentBackgroundColor="black" contentBackgroundAlpha="0.5" color="white"
+														prompt="Select counties...">
+											<s:ArrayList>
+												<fx:Object label="None selected"	id="dsoNoSelection"/>
+												<fx:Object label="Top 10%"			id="dsoTopTenPct"/>
+												<fx:Object label="Bottom 10%"		id="dsoBottomTenPct"/>
+												<fx:Object label="Specify %"		id="dsoSpecifyPct"/>
+												<fx:Object label="Above average"	id="dsoAboveAvg"/>
+												<fx:Object label="Below average"	id="dsoBelowAvg"/>
+												<fx:Object label="Specify range"	id="dsoSpecifyRange"/>
+												<fx:Object label="Specify % range"	id="dsoSpecifyPctRange"/>												
+											</s:ArrayList>
+											<s:layout>
+												<s:VerticalLayout requestedRowCount="-1" horizontalAlign="justify"/>
+											</s:layout>
+											<s:change>
+												<![CDATA[
+												// Only take action for choices without UI components
+												switch( DropDownList(event.currentTarget).selectedItem ) {
+													case dsoNoSelection:
+														lyrDynMap.clearLayerDefinition();
+//														lyrDynMap.refresh();
+														break;
+													case dsoTopTenPct:
+														setDefinitionMinPct( 90, true );
+//														lyrDynMap.refresh();
+														break;
+													case dsoBottomTenPct:
+														setDefinitionMaxPct( 10, true );
+//														lyrDynMap.refresh();
+														break;
+													case dsoAboveAvg:
+														setDefinitionMinPct( 50, true );
+//														lyrDynMap.refresh();
+														break;
+													case dsoBelowAvg:
+														setDefinitionMaxPct( 50, true );
+//														lyrDynMap.refresh();
+														break;
+													default: // ignore it
+														break;
+												}
+												]]>
+											</s:change>
+										</s:DropDownList>
+										
+										<!-- "Specify %" options -->
+										<s:HGroup id="grpSelOptionSpecifyPct" verticalAlign="middle"
+												  visible="{lstSelOptions.selectedItem === dsoSpecifyPct}"
+												  includeInLayout="{lstSelOptions.selectedItem === dsoSpecifyPct}"
+												  color="white" contentBackgroundAlpha="0"
+												  show="numSpecifyPct.dispatchEvent(new Event(Event.CHANGE))">
+											<s:VGroup gap="0">
+												<s:RadioButton id="optSpecifyPctTop" label="Top" group="{rbgSpecifyPct}" selected="true"/>
+												<s:RadioButton id="optSpecifyPctBottom" label="Bottom" group="{rbgSpecifyPct}"/>
+											</s:VGroup>
+											<s:NumericStepper id="numSpecifyPct" width="50" minimum="0" maximum="100" value="25"
+															  change="numSpecifyPct_changeHandler(event)"
+															  toolTip="If you type a number, press Enter to apply the value">
+												
+											</s:NumericStepper>											
+											<s:Label text="%"/>
+										</s:HGroup>
+										
+										<!-- "Specify range" options -->
+										<s:VGroup visible="{lstSelOptions.selectedItem === dsoSpecifyRange}" horizontalAlign="center"
+												  includeInLayout="{lstSelOptions.selectedItem === dsoSpecifyRange}"
+												  gap="0"
+												  show="lyrDynMap.clearLayerDefinition()">
+											<s:creationComplete>
+												<![CDATA[
+												VGroup(event.currentTarget).validateSize(true);
+												]]>
+											</s:creationComplete>
+											<s:show>
+												<![CDATA[
+												// Histogram doesn't get properly initialized 1st time for unknown reasons...
+												mapHistoSlider.data = lyrDynMap.dataDistribution;
+												]]>
+											</s:show>
+											
+											<histoSlider:HistoSlider id="mapHistoSlider"
+																	 data="{lyrDynMap.dataDistribution}"
+																	 dataDistributionBuckets="{outerDocument.m_xmlConfig.dataDistributionBuckets.valueOf()}"
+																	 sliderChange="mapHistoSlider_sliderChangeHandler(event)"
+																	 liveDragging="false"
+																	 width="150" height="30">
+											</histoSlider:HistoSlider>
+
+											<s:Label text="Range: {histogramRangeLabel(mapHistoSlider.values)}" 
+													 color="white" textAlign="center"
+													 fontFamily="_sans" fontSize="10"/>
+										</s:VGroup>
+										
+										<!-- "Specify % range" options -->
+										<s:HGroup verticalAlign="middle" gap="0" contentBackgroundAlpha="0" color="white"
+												  visible="{lstSelOptions.selectedItem === dsoSpecifyPctRange}"
+												  includeInLayout="{lstSelOptions.selectedItem === dsoSpecifyPctRange}"
+												  show="lyrDynMap.clearLayerDefinition()">
+											<s:Label text="From:"/><s:Spacer width="10"/>
+											<s:NumericStepper id="numSpecifyPctRangeMin" width="50" minimum="0" maximum="100" value="0"
+															  change="numSpecifyPctRange_changeHandler(event)"
+															  toolTip="If you type a number, press Enter to apply the value"/>
+											<s:Label text="%"/><s:Spacer width="10"/><s:Label text="to"/><s:Spacer width="10"/>
+											<s:NumericStepper id="numSpecifyPctRangeMax" width="50" minimum="0" maximum="100" value="100"
+															  change="numSpecifyPctRange_changeHandler(event)"
+															  toolTip="If you type a number, press Enter to apply the value"/>
+											<s:Label text="%"/>
+										</s:HGroup>
+										
+									</s:HGroup>
+										
+										
+								</s:BorderContainer>
+								
+							</s:Group>
+							
+						</s:ItemRenderer>
+					</fx:Component>
+				</s:itemRenderer>
+		</s:DataGroup>
+
+<!--		</s:HGroup>-->
+	</mx:HDividedBox>
+		
+	</s:VGroup>
+
+	<s:Group top="10" horizontalCenter="0">		
+		<s:VGroup>
+			<s:HGroup gap="7" verticalAlign="bottom">
+			<!-- Chosen colors bar -->
+			<s:VGroup width="100%" gap="3">
+				<!-- Less/Average/More labels -->
+				<s:HGroup id="grpLegend" gap="0" width="100%" 
+						  fontFamily="_sans" fontSize="11" fontWeight="bold"
+						  color="0xFFFFFF">
+					<s:Label width="33.33%" text="Less" textAlign="left"/>
+					<s:Label width="33.33%" text="Average" textAlign="center"/>
+					<s:Label width="33.33%" text="More" textAlign="right"/>						
+				</s:HGroup>
+				<!-- Color ramp -->
+				<s:DataGroup id="dgChosenColors" width="100%" toolTip="Ctrl+Click+hold on a color to show matching features"							 
+							 dataProvider="{_chosenColors.colors}" click="toggleRenderOptions()">
+					<s:layout>
+						<s:HorizontalLayout gap="0" 
+											columnWidth="{250/_chosenColors.colors.length}" 
+											variableColumnWidth="false"/>
+					</s:layout>
+					<s:initialize>
+						<![CDATA[
+						ToolTipManager.showDelay = 1000;// Display immediately.
+						ToolTipManager.hideDelay = 3000; // Hide after 3 seconds of being viewed.
+						ToolTipManager.showEffect = fxFadeInChosenColorsTooltip;
+						ToolTipManager.hideEffect = fxFadeOutChosenColorsTooltip;
+						]]>
+					</s:initialize>
+					<s:toolTipEnd>
+						<![CDATA[
+						DataGroup(event.currentTarget).toolTip = "";
+						]]>
+					</s:toolTipEnd>
+					<s:itemRenderer>
+						<fx:Component>
+							<s:ItemRenderer>
+								<fx:Script>
+									<![CDATA[
+										/** Flag to detect whether a mouse-up should stop the hilite */
+										private var bCtrlKeyPlusMouseClickOnColorPatch:Boolean = false;
+										
+										protected function onMouseDown(event:MouseEvent):void {
+											if ( event.ctrlKey ) {
+												bCtrlKeyPlusMouseClickOnColorPatch = true;
+												newColorSelected( event );
+											}
+										}
+										protected function onRollOver(event:MouseEvent):void
+										{
+											if ( event.ctrlKey && bCtrlKeyPlusMouseClickOnColorPatch )
+												newColorSelected( event );
+										}
+										
+										protected function newColorSelected(event:MouseEvent):void
+										{
+											// This tickles a property change watcher within the map group item renderer,
+											// which should kick off a highlight map layer requery and display 
+											outerDocument.chosenHilightColor = Canvas(event.currentTarget).getStyle( "backgroundColor" );
+											// Also prevent the color selection list from popping up...
+											event.stopPropagation();
+										}
+										
+										protected function colorUnselected(event:MouseEvent):void
+										{
+											if ( bCtrlKeyPlusMouseClickOnColorPatch ) {
+												bCtrlKeyPlusMouseClickOnColorPatch = false;
+												outerDocument.chosenHilightColor = NaN;
+											}
+											event.stopPropagation();
+										}
+									]]>
+								</fx:Script>
+								<mx:Canvas height="15" width="100%" 
+										   borderStyle="solid" 
+										   backgroundColor="{data}"
+										   mouseDown="onMouseDown(event)" rollOver="onRollOver(event)"
+										   mouseUp="colorUnselected(event)" rollOut="colorUnselected(event)">
+									<mx:click>
+										<![CDATA[
+										if ( event.ctrlKey ) event.stopPropagation();
+										]]>
+									</mx:click>
+								</mx:Canvas>									
+							</s:ItemRenderer>
+						</fx:Component>
+					</s:itemRenderer>
+				</s:DataGroup>
+			</s:VGroup>
+				<s:Image buttonMode="true" click="toggleRenderOptions()"
+						 source="{grpRendererOptions.visible ? 'assets/images/rampCollapse.png' : 'assets/images/rampExpand.png'}"
+						 toolTip="Click to {grpRendererOptions.visible ? 'collapse' : 'expand'} color list"/>
+			</s:HGroup>
+
+
+			<!-- CLASS BREAKS OPTIONS -->
+			<s:VGroup id="grpRendererOptions" visible="false">
+				<s:showEffect>
+					<s:Fade alphaFrom="0" alphaTo="1" duration="500"/>
+				</s:showEffect>
+				<!-- Class breaks algorithm -->
+				<s:HGroup width="100%" verticalAlign="middle">					
+					<s:NumericStepper id="numClassBreakCount" minimum="5" maximum="9" stepSize="2">
+						<s:creationComplete>
+							<![CDATA[
+								NumericStepper(event.currentTarget).addEventListener( Event.CHANGE,
+									function( event:Event ):void {
+										lblNumberClassBreaks.text = NumericStepper(event.currentTarget).value.toString();
+										fxAnimateClassBreaksText.play( [ lblNumberClassBreaks ] );
+									}
+								);
+							]]>
+						</s:creationComplete>
+					</s:NumericStepper>
+					<s:DropDownList id="cboClassBreaksAlgorithm" selectedIndex="0" width="100%" height="100%">
+						<s:dataProvider>
+							<s:ArrayCollection>
+								<fx:Object label="Quantiles" value="{ClassBreaksDefinition.CLASSIFY_QUANTILE}"/>
+								<fx:Object label="Equal Intervals" value="{ClassBreaksDefinition.CLASSIFY_EQUAL_INTERVAL}"/>
+								<fx:Object label="Natural Breaks" value="{ClassBreaksDefinition.CLASSIFY_NATURAL_BREAKS}"/>
+							</s:ArrayCollection>
+						</s:dataProvider>
+						<s:close>
+							<![CDATA[
+							grpRendererOptions.visible = false;
+							]]>
+						</s:close>
+					</s:DropDownList>
+					<s:Image source="@Embed('assets/images/classificationMethodsInfo.png')" buttonMode="true"
+							 toolTip="Click for details on these classification methods."
+							 click="navigateToURL(new URLRequest(m_xmlConfig.classificationMethodsDocUrl.valueOf()), '_blank')"/>
+				</s:HGroup>
+				
+				<!-- COLORS LIST -->
+				<s:List id="cboColors" width="100%" contentBackgroundColor="0x000000" contentBackgroundAlpha="0.75"
+						dataProvider="{colorRampDataProvider(m_xmlConfig.attrBreaks.colorRamps.colorRamp, numClassBreakCount.value)}"
+						selectionColor="0x6666CC" selectedIndex="0">
+					<s:layout>
+						<!-- Helps make sure there are no blank rows after colors are filtered -->
+						<s:VerticalLayout requestedMinRowCount="1" gap="1"/>
+					</s:layout>
+					<s:valueCommit>
+						<![CDATA[
+						var lst:List = List(event.currentTarget);
+						// If the color ramp list changed and nothing's selected, auto-select the first one
+						if ( lst.selectedIndex == -1 && lst.dataProvider && lst.dataProvider.length > 0 ) {
+							lst.selectedIndex = 0;
+							callLater(function():void {grpRendererOptions.visible = false;});
+						}
+						var xmlColor:XML = XML(event.currentTarget.selectedItem);
+						_chosenColors = new SelectedColorInfo( 
+							xmlColor.color.@hex, xmlColor.@outlineColor, xmlColor.@outlineAlpha 
+						);
+						]]>
+					</s:valueCommit>
+					<s:itemRenderer>
+						<fx:Component>
+							<s:ItemRenderer>
+								<fx:Script>
+									<![CDATA[
+										import mx.collections.XMLListCollection;
+									]]>
+								</fx:Script>
+								
+								<s:DataGroup id="dgColorRamps" width="100%"
+											 dataProvider="{new XMLListCollection(data.color)}">
+									<s:layout>
+										<s:HorizontalLayout paddingTop="1" paddingBottom="1" gap="0" variableColumnWidth="false" 
+															columnWidth="{250/data.color.length()}"/>
+									</s:layout>
+									<s:itemRenderer>
+										<fx:Component>
+											<s:ItemRenderer>
+												<mx:Canvas borderStyle="solid" height="15" width="100%" backgroundColor="{data.@hex}"/>													
+											</s:ItemRenderer>
+										</fx:Component>
+									</s:itemRenderer>
+								</s:DataGroup>
+							</s:ItemRenderer>
+						</fx:Component>
+					</s:itemRenderer>						
+					<s:click>
+						<![CDATA[
+						grpRendererOptions.visible = false;
+						]]>
+					</s:click>
+				</s:List>
+			</s:VGroup>
+			
+		</s:VGroup>
+		<s:Label id="lblNumberClassBreaks"
+				 visible="false"
+				 horizontalCenter="0" verticalCenter="0"
+				 alpha="0" backgroundAlpha="1" 
+				 color="white" 
+				 fontWeight="bold" fontSize="12"
+				 >
+		</s:Label>
+	</s:Group>
+
+	<!-- Footer -->
+	
+</s:Application>

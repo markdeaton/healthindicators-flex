@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" 
+		 xmlns:ns="library://ns.patrickmowrer.com" 
+		 xmlns:histogram="components.histogram.*"
+		 height="100%" width="100%">
+	<fx:Metadata>
+		[Event(name="sliderChange", type="flash.events.Event")]
+	</fx:Metadata>
+	<fx:Script>
+	<![CDATA[
+		import helperClasses.AttributeInfo;
+		import helperClasses.DistributionBucket;
+		
+		import mx.binding.utils.ChangeWatcher;
+		import mx.collections.ArrayCollection;
+		import mx.events.FlexEvent;
+		import mx.graphics.SolidColor;
+		
+		// VARS
+		[Bindable]
+		public var liveDragging:Boolean = false;
+		
+		private var _data:ArrayCollection;
+		private var _dataDistribution:ArrayCollection;
+		private var _dataDistributionBuckets:uint = NaN;
+		
+		private var _background:SolidColor = new SolidColor();
+		
+		// PROPERTIES
+
+		private function get dataDistribution():ArrayCollection
+		{
+			return _dataDistribution;
+		}
+
+		private function set dataDistribution(value:ArrayCollection):void
+		{
+			_dataDistribution = value;
+			histogram.dataProvider = _dataDistribution;
+			
+			var minVal:Number = DistributionBucket(value[ 0 ]).minValue;
+			var maxVal:Number = DistributionBucket(value[ value.length - 1 ]).maxValue;
+			
+			slider.minimum = minVal;
+			slider.maximum = maxVal;
+			slider.values = [ minVal, maxVal ];
+			
+			// Also figure out data tip precision
+			var precision:uint = AttributeInfo.suggestedPrecision( minVal, maxVal, value.length );
+			slider.setStyle( "dataTipPrecision", precision );
+		}
+
+		private function get readyToFindDataDistribution():Boolean {
+			return ( _data != null ) && ( !isNaN(_dataDistributionBuckets) ); 
+		}
+		
+		public function get dataDistributionBuckets():uint
+		{
+			return _dataDistributionBuckets;
+		}
+
+		public function set dataDistributionBuckets(value:uint):void
+		{
+			_dataDistributionBuckets = value;
+			if ( readyToFindDataDistribution )
+				dataDistribution = findDataDistribution();
+		}
+
+		public function set data( value:ArrayCollection ):void {
+			_data = value;
+			if ( readyToFindDataDistribution )
+				dataDistribution = findDataDistribution();
+			invalidateDisplayList();
+		}
+		public function get data():ArrayCollection {
+			return _data;
+		}
+		/**
+		 * The value corresponding to the lower of the two slider thumbs
+		 **/
+		public function get lowThumbVal():Number {
+			return slider.values[ 0 ];
+		}
+		/**
+		 * The value corresponding to the higher of the two slider thumbs
+		 **/
+		public function get highThumbVal():Number {
+			return slider.values[ 1 ];
+		}
+
+		/**
+		 * The maximum possible slider value
+		 **/
+		public function get maxVal():Number {
+			return slider.maximum;
+		}
+
+		/**
+		 * The minimum possible slider value
+		 **/
+		public function get minVal():Number {
+			return slider.minimum;
+		}
+		/**
+		 * Low, High values for slider thumbs
+		 **/
+		public function set values(value:Array):void {
+			slider.values = value;
+		}
+		[Bindable(event="sliderChange")]
+		public function get values():Array {
+			return slider.values;
+		}
+		
+		/**
+		 * Sets lower thumb value via percentage rather than absolute value.<br/>
+		 * If this displaces the upper thumb, it resets the upper thumb to its maximum possible value.
+		 **/
+		public function set lowThumbPct( value:Number ):void {
+			var idx:uint = Math.floor( (_data.length -1) * (value/100) );
+			var nTargetVal:Number = _data[ idx ];
+			var nMax:Number = (highThumbVal > nTargetVal) ? highThumbVal : maxVal;
+			slider.values = [ nTargetVal, nMax ];
+		}
+		/**
+		 * Sets upper thumb value via percentage rather than absolute vaue.<br/>
+		 * If this displaces the lower thumb, it resets the lower thumb to its minimum possible value.
+		 **/
+		public function set highThumbPct( value:Number ):void {
+			var idx:uint = Math.floor( (_data.length -1) * (value/100) );
+			var nTargetVal:Number = _data[ idx ];
+			var nMin:Number = (lowThumbVal < nTargetVal) ? lowThumbVal : minVal;
+			slider.values = [ nMin, nTargetVal ];
+		}
+
+		// METHODS
+		
+ 		private function findDataDistribution():ArrayCollection {
+			var firstVal:Number = _data[ 0 ];
+			var lastVal:Number = _data[ _data.length - 1 ];
+			var bucketSize:Number = (lastVal - firstVal) / _dataDistributionBuckets;
+			var dist:ArrayCollection = new ArrayCollection();
+			for ( var i:int = 0; i < _dataDistributionBuckets; i++ ){
+				var minVal:Number = firstVal + (i * bucketSize);
+				var maxVal:Number;
+				if ( i < _dataDistributionBuckets - 1 )
+					maxVal = minVal + bucketSize;
+				else
+					maxVal = lastVal;
+				dist.addItem( new DistributionBucket( minVal, maxVal ) );
+			}
+			// Update bucket counts
+			for each ( var val:Number in _data ) {
+				var bucket:int;
+				if ( !isNaN( val ) ) {
+					// Special handling for boundary case
+					if ( val == lastVal ) bucket = _dataDistributionBuckets - 1;
+					else {
+						var valDistAlongRange:Number = val - firstVal;
+						bucket = Math.floor( valDistAlongRange / bucketSize );
+					}
+					DistributionBucket(dist[ bucket ]).count++;
+				}
+			}
+			return dist;
+		} 
+
+		
+		private function valuesChanged( event:Event ):void {
+			dispatchEvent( new Event( "sliderChange" ) );
+			// Would like to also signal listeners if upper thumb or lower thumb val has changed
+			// However, slider isn't built to broadcast this info to us, so cannot do the following...
+/* 			if ( event.oldValue[ 0 ] != event.newValue[ 0 ] )
+				dispatchEvent( PropertyChangeEvent.createUpdateEvent( 
+					this, "lowThumbVal", event.oldValue[ 0 ], event.newValue[ 0 ] ) );
+			if ( event.oldValue[ 1 ] != event.newValue[ 1 ] )
+				dispatchEvent( PropertyChangeEvent.createUpdateEvent( 
+					this, "highThumbVal", event.oldValue[ 1 ], event.newValue[ 1 ] ) ); */
+		}
+		
+		protected function slider_creationCompleteHandler(event:FlexEvent):void {
+			ChangeWatcher.watch( slider, "values", valuesChanged );
+		}
+		
+	]]>
+	</fx:Script>
+	
+	<fx:Declarations>
+	</fx:Declarations>
+	
+	<s:layout>
+		<s:VerticalLayout gap="-4" horizontalAlign="justify"/>
+	</s:layout>
+
+	
+	<mx:ColumnChart id="histogram" height="100%" width="100%" minHeight="10">
+		<mx:series>
+			<mx:ColumnSeries yField="count" columnWidthRatio="1" sortOnXField="false">
+				<mx:fill><s:SolidColor color="white"/></mx:fill>
+			</mx:ColumnSeries>
+		</mx:series>
+		
+		<mx:backgroundElements>
+			<mx:GridLines visible="false"/>
+		</mx:backgroundElements>
+		
+		<mx:horizontalAxis>
+			<mx:LinearAxis id="horizontalAxis"/>
+		</mx:horizontalAxis>
+		<mx:horizontalAxisRenderers>
+			<mx:AxisRenderer axis="{horizontalAxis}" 
+							 minorTickPlacement="none" 
+							 tickPlacement="none" 
+							 labelGap="0" 
+							 showLabels="false" 
+							 showLine="false"/>
+		</mx:horizontalAxisRenderers>
+
+		<mx:verticalAxis>
+			<mx:LinearAxis id="verticalAxis"/>
+		</mx:verticalAxis>
+		<mx:verticalAxisRenderers>
+			<mx:AxisRenderer axis="{verticalAxis}" 
+							 minorTickPlacement="none" 
+							 tickPlacement="none" 
+							 labelGap="0" 
+							 showLabels="false"
+							 showLine="false" />
+		</mx:verticalAxisRenderers>
+	</mx:ColumnChart>
+		
+
+	<ns:HSlider id="slider" alpha="0.5"
+				width="{histogram.width}" snapInterval="0"
+				liveDragging="{this.liveDragging}"
+				creationComplete="slider_creationCompleteHandler(event)">
+	</ns:HSlider>
+</s:Group>

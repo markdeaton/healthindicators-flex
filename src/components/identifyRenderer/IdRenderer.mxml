@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:DataGrid xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			xmlns:s="library://ns.adobe.com/flex/spark" 
+			xmlns:mx="library://ns.adobe.com/flex/mx"
+			implements="mx.core.IDataRenderer"
+			width="300" height="200"
+			contentBackgroundColor="black" color="white"
+			fontSize="11" 
+			chromeColor="0x333333" selectionMode="none"
+			horizontalScrollPolicy="auto"
+			dataProvider="{_dataForRendering}"
+			rowHeight="20">
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->		
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import com.esri.ags.Graphic;
+			
+			import mx.collections.ArrayCollection;
+			[Bindable]
+			private var _dataForRendering	: ArrayCollection;
+			private var _rawData			: Graphic;
+			[Bindable]
+			/**
+			 * Array of Esri field objects for resolving aliases of fields in the identify results.
+			 **/
+			private var _fieldInfos			: ArrayCollection;
+			
+			/**
+			 *  ArrayCollection of AttributeInfo records. Used to present more readable
+			 *  attribute aliases in the InfoWindow.
+			 **/
+			public function get fieldInfos():ArrayCollection
+			{
+				return _fieldInfos;
+			}
+			public function set fieldInfos(value:ArrayCollection):void
+			{
+				_fieldInfos = value;
+			}
+
+			/**
+			 * Expect to receive a feature object. Convert it to ArrayCollection for internal use.
+			 **/
+			public function get data():Object
+			{
+				return _rawData; 
+			}
+			
+			public function set data(value:Object):void
+			{
+				_rawData = value as Graphic;
+				var data:Array = new Array();
+				// Also process data for rendering
+				for (var sAttr:String in _rawData.attributes) {			
+					// sAttr is the field name; find the alias for it
+					var aryFldInfo:Array = fieldInfos.source.filter( function( ai:Object, index:int, ary:Array ):Boolean {
+						return ai.name == this.toString();
+					}, sAttr );
+					var sFldAlias:String = ( aryFldInfo.length > 0 ) ? aryFldInfo[ 0 ].alias : sAttr;
+					data.push( { 
+						"Attribute"	: sFldAlias, 
+						"Value"		: _rawData.attributes[sAttr] 
+					} );
+				}
+				data.sortOn("Attribute", Array.CASEINSENSITIVE);
+				_dataForRendering = new ArrayCollection(data);
+			
+			}
+		]]>
+	</fx:Script>
+	
+	<s:itemRenderer>
+		<fx:Component>
+			<s:GridItemRenderer>
+					<s:Label text="{data[column.dataField]}" toolTip="{data[column.dataField]}"
+							 maxDisplayedLines="1" width="100%" height="100%"
+							 verticalAlign="middle"
+							 paddingLeft="5" paddingRight="5"/>
+			</s:GridItemRenderer>
+		</fx:Component>
+	</s:itemRenderer>
+</s:DataGrid>

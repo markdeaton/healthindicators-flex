@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx" 
+			   width="547"
+			   backgroundColor="0x191919" 
+			   close="closeWindow()"
+			   title="Import your own comma-separated values (CSV) data" 
+			   xmlns:GIFPlayer="GIFPlayer.*">
+	<s:layout>
+		<s:VerticalLayout paddingBottom="10" paddingLeft="10" paddingRight="10" paddingTop="10" gap="10"/>
+	</s:layout>
+	
+	<fx:Metadata>
+		[Event(name="fileImported", type="components.importDataset.FileImportEvent")]
+	</fx:Metadata>
+	<fx:Style>
+		@namespace s "library://ns.adobe.com/flex/spark";
+		@namespace mx "library://ns.adobe.com/flex/mx";
+		
+		.label {
+			color: "0xFFFFFF"
+		}
+		.mutedText {
+			color: "0xAAAAAA"
+		}
+	</fx:Style>
+	<fx:Script>
+		<![CDATA[
+			import flash.net.navigateToURL;
+		]]>
+	</fx:Script>
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+		<fx:String id="sAboutDataStructure"/>
+		<fx:String id="exampleFile1"/>
+		<fx:String id="exampleFile2"/>
+	</fx:Declarations>
+	
+	<fx:Script>
+	<![CDATA[
+		import com.esri.ags.tasks.Geoprocessor;
+		import com.esri.ags.tasks.supportClasses.ExecuteResult;
+		import com.esri.ags.utils.JSONUtil;
+		
+		import mx.controls.Alert;
+		import mx.events.CloseEvent;
+		import mx.managers.PopUpManager;
+		import mx.rpc.AsyncResponder;
+		import mx.rpc.Fault;
+		import mx.rpc.events.FaultEvent;
+
+		private const GP_PROCESSING_MSG				: String = "Importing your data file...";
+		
+		/** 
+		 * GP services now have an upload-file capability. This is the url that will
+		 * be used to upload the user's data file.
+		 **/ 
+		public var gpImportUploadUrl				: String;
+		/** The GP service that will perform the import and indexing of the user's data file **/
+		public var gpImportUrl						: String;
+		/** The url that will be used to upload the user's data file for determining the field names. **/ 
+//		public var gpListFieldsUploadUrl			: String;
+		/** The GP service that will list and return the CSV file's field names **/
+		public var gpListFieldsUrl					: String;
+//		/** The name of the GP parameter for the user's data file to import **/
+		public var importDataFilenameParam			: String;
+		/** The name of the GP parameter for the field used for indexing/joining in the user's uploaded data file **/
+		public var importJoinFieldnameParam			: String;
+		/** The name of the GP parameter that holds the name of the table generated for the user's uploaded data file **/
+		public var importCreatedTablenameParam		: String;
+		/** The name of the GP parameter for the name of the user's data file to list header fields for **/
+//		public var listFieldsDataFilenameParam		: String;
+		/** The name of the GP parameter holding the list of CSV fields **/
+//		public var listFieldsFieldNamesParam		: String;
+		
+		/** 
+		 * The ArcGIS Server ID for the newly uploaded file.
+		 * This ID will be used as a parameter to the import geoprocessing service.
+		 **/
+		[Bindable]
+		private var _uploadedFileId		: String;
+
+		private var _fileRef			: FileReference;
+		private var _gp					: Geoprocessor;
+		
+		[Bindable]
+		private var _gpInProgress		: Boolean = false;
+		
+		protected function fileUpload_Click(event:MouseEvent):void
+		{
+			_fileRef = new FileReference();
+			_fileRef.browse( [new FileFilter( "CSV (*.csv)", "*.csv" )] );
+			_fileRef.addEventListener( Event.SELECT, onFileSelected );
+		}
+		
+/* 		private function onListFieldsFileUploadComplete(event:DataEvent):void {
+			_fileRef.removeEventListener( DataEvent.UPLOAD_COMPLETE_DATA, onListFieldsFileUploadComplete );
+
+			var result:Object = JSONUtil.decode(event.data);
+			var uploadedFileId:String = result.item.itemID;
+			
+			// Get CSV field names
+			var gp:Geoprocessor = new Geoprocessor( gpListFieldsUrl );
+			var params:Object = new Object();
+			var inputDataFileParam:String = "inCSVFile";
+			params[ inputDataFileParam ] = {"itemID":uploadedFileId};
+			gp.execute( params, new AsyncResponder(
+				function( result:Object, token:Object = null ):void {
+					var aryResult:Array = result.results[ 0 ].value;
+					lstCandidateJoinFields.dataProvider = new ArrayList(aryResult);
+				},
+				function( fault:Object, token:Object = null ):void {
+					trace(fault);
+				})
+			);
+
+		} */
+		private function onImportFileUploadComplete(event:DataEvent):void {
+			var result:Object = JSONUtil.decode(event.data);
+			_uploadedFileId = result.item.itemID;
+			_fileRef.removeEventListener( DataEvent.UPLOAD_COMPLETE_DATA, onImportFileUploadComplete );
+		}
+		private function onFileSelected( event:Event ):void {
+			_fileRef.removeEventListener( Event.SELECT, onFileSelected );
+
+			var urlVars:URLVariables = new URLVariables();
+			urlVars.f = "json";
+			
+			var furImport:URLRequest = new URLRequest(gpImportUploadUrl);
+			furImport.method = URLRequestMethod.POST;
+			furImport.data = urlVars;
+
+			// Upload to import GP service
+			_fileRef.addEventListener( DataEvent.UPLOAD_COMPLETE_DATA, onImportFileUploadComplete );
+			_fileRef.upload( furImport, "file" );
+			
+			// Upload to list-fieldnames GP service
+/* 			var furListFields:URLRequest = new URLRequest(gpListFieldsUploadUrl);
+			furListFields.method = URLRequestMethod.POST;
+			furListFields.data = urlVars;
+			
+			_fileRef.addEventListener( DataEvent.UPLOAD_COMPLETE_DATA, onListFieldsFileUploadComplete );
+			_fileRef.upload( furListFields, "file" ); */
+		}
+		
+		protected function btnOK_clickHandler(event:MouseEvent):void
+		{
+			_gp = new Geoprocessor( gpImportUrl );
+//			_gp.useAMF = false;
+			var params:Object = new Object();
+			params[ importDataFilenameParam ] = {"itemID":_uploadedFileId};
+			params[ importJoinFieldnameParam ]= txtIndexFieldname.text;
+
+			_gpInProgress = true;
+/* 			_gp.submitJob( params, new AsyncResponder(
+				onGPSuccess,
+				function(fault:FaultEvent, token:Object = null):void {
+					trace("gp failure");
+					_gpInProgress = false;
+					_errorMessage = fault.fault.faultString;
+				}
+			)); */
+			_gp.execute( params, new AsyncResponder(
+				onGPSuccess,
+				function(fault:Fault, token:Object = null):void {
+					trace("gp failure");
+					Alert.show(fault.faultDetail);
+					_gpInProgress = false;
+				}
+			)); 
+		}
+		
+		private function closeWindow():void {
+			PopUpManager.removePopUp(this);
+			_uploadedFileId = null;
+//			txtIndexFieldname.text = null;
+		}
+		
+		private function onGPSuccess( result:Object, token:Object = null ):void {
+			trace("gp success");
+			_gpInProgress = false;
+			var sImportedTablename:String;
+			
+			// Handle sync or async results
+			if ( result is ExecuteResult ) {
+				sImportedTablename = result.results[0].value;
+			}
+			else // if result is JobInfo {
+			{
+				_gp.getResultData( result.jobId, importCreatedTablenameParam, new AsyncResponder(
+					function( result:Object, token:Object = null ):void {
+						trace("GP getResultData complete");
+						sImportedTablename = result.value;
+					},
+					function( fault:FaultEvent, token:Object = null ):void {
+						trace("GP getResultData failure");
+						Alert.show(fault.message.toString());
+					}
+				));
+			}
+			
+			dispatchEvent( new FileImportEvent( FileImportEvent.FILE_IMPORTED, sImportedTablename, txtIndexFieldname.text + "_TXT", true ) );
+			closeWindow();
+
+		}
+		
+	]]>
+	</fx:Script>
+	
+	<s:Label text="About your data file..." color="white"/>
+	<s:HGroup verticalAlign="contentJustify" width="100%">
+		<s:Form width="50%" color="white">
+			<s:layout>
+				<s:FormLayout gap="-10"/>
+			</s:layout>
+			<!--		<s:FormHeading label="About your data file..."/>-->
+			<s:FormItem label="Choose a file">
+				<s:Button label="Browse..." click="fileUpload_Click(event)" color="black"/>
+				<s:HGroup id="indFileUploaded" gap="5" visible="{_uploadedFileId != null}" verticalAlign="middle">
+					<s:Image source="@Embed('assets/images/16_check.png')" height="16" width="16"/>
+					<s:Label text="Uploaded" styleName="label"/>
+				</s:HGroup>
+<!--				<s:helpContent>
+					<s:Label text="A CSV file with a field of FIPS codes" width="100%"/>
+				</s:helpContent>-->
+			</s:FormItem>
+			
+			<s:FormItem label="FIPS field name">
+				<s:TextInput id="txtIndexFieldname" text="FIPS" color="black" width="100%"/>
+				<!--			<s:DropDownList id="lstCandidateJoinFields" prompt="Choose a field"/>-->
+				<s:Spacer height="15"/>
+			<s:HGroup horizontalAlign="right" width="100%">
+				<s:Button id="btnOK" label="Import" color="black" click="btnOK_clickHandler(event)" enabled="{_uploadedFileId &amp;&amp; (txtIndexFieldname.text != '')}"/>
+				<s:Button id="btnCancel" label="Cancel" color="black" click="this.dispatchEvent(new CloseEvent(CloseEvent.CLOSE))"/>
+			</s:HGroup>
+			</s:FormItem>
+					
+		</s:Form>
+
+		<s:VGroup width="50%">
+			<s:Label text="About imported data:" styleName="label"/>
+			<s:Label width="100%" text="{sAboutDataStructure}" styleName="mutedText"/>
+<!--			<s:Image source="assets/images/CSVExample.png"/>-->
+			<s:HGroup>
+				<mx:LinkButton label="Example 1" click="navigateToURL(new URLRequest(exampleFile1))" color="cyan" textDecoration="underline"/>
+				<mx:LinkButton label="Example 2" click="navigateToURL(new URLRequest(exampleFile2))" color="cyan" textDecoration="underline"/>
+			</s:HGroup>
+		</s:VGroup>
+	</s:HGroup>
+	
+
+	<s:HGroup width="100%">
+		<s:HGroup id="grpGPIndicator" horizontalAlign="left" verticalAlign="contentJustify" width="100%" 
+				  visible="{_gpInProgress}" includeInLayout="{_gpInProgress}">
+			<GIFPlayer:GIFPlayerComponent url="assets/images/progressIndicator_transparent.gif"/>
+			<s:Spacer width="15"/>
+			<s:Label text="{GP_PROCESSING_MSG}" color="yellow"/>
+		</s:HGroup>
+<!--		<s:HGroup horizontalAlign="right" width="100%">
+			<s:Button id="btnOK" label="Import" click="btnOK_clickHandler(event)" enabled="{_uploadedFileId &amp;&amp; (txtIndexFieldname.text != '')}"/>
+			<s:Button id="btnCancel" label="Cancel" click="this.dispatchEvent(new CloseEvent(CloseEvent.CLOSE))"/>
+		</s:HGroup>-->
+	</s:HGroup>
+</s:TitleWindow>
